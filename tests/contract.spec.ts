@@ -1,35 +1,176 @@
-export type Method = "GET" | "POST" | "PUT" | "DELETE";
+import { readFileSync } from 'fs'
+import { parse } from 'yaml'
+
+export type Method = 'GET' | 'POST' | 'PUT' | 'DELETE'
 
 export interface Endpoint {
-  path: string;
-  methods: Method[];
-  produces?: string[];
-  consumes?: string[];
+  path: string
+  methods: Method[]
 }
 
 export const expected: Endpoint[] = [
-  { path: "/application", methods: ["GET", "POST"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/application/{id}", methods: ["PUT", "DELETE"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/application/{id}/image", methods: ["POST", "DELETE"], consumes: ["multipart/form-data"], produces: ["application/json"] },
-  { path: "/application/{id}/message", methods: ["GET", "DELETE"], produces: ["application/json"] },
-  { path: "/client", methods: ["GET", "POST"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/client/{id}", methods: ["PUT", "DELETE"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/current/user", methods: ["GET"], produces: ["application/json"] },
-  { path: "/current/user/password", methods: ["POST"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/health", methods: ["GET"], produces: ["application/json"] },
-  { path: "/message", methods: ["GET", "POST", "DELETE"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/message/{id}", methods: ["DELETE"], produces: ["application/json"] },
-  { path: "/plugin", methods: ["GET"], produces: ["application/json"] },
-  { path: "/plugin/{id}/config", methods: ["GET", "POST"], consumes: ["application/x-yaml"], produces: ["application/x-yaml", "application/json"] },
-  { path: "/plugin/{id}/disable", methods: ["POST"], produces: ["application/json"] },
-  { path: "/plugin/{id}/display", methods: ["GET"], produces: ["application/json"] },
-  { path: "/plugin/{id}/enable", methods: ["POST"], produces: ["application/json"] },
-  { path: "/stream", methods: ["GET"], produces: ["application/json"] },
-  { path: "/user", methods: ["GET", "POST"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/user/{id}", methods: ["GET", "POST", "PUT", "DELETE"], consumes: ["application/json"], produces: ["application/json"] },
-  { path: "/version", methods: ["GET"], produces: ["application/json"] }
-];
+  { path: '/application', methods: ['GET', 'POST'] },
+  { path: '/application/{id}', methods: ['DELETE', 'GET', 'PUT'] },
+  { path: '/application/{id}/image', methods: ['DELETE', 'POST'] },
+  { path: '/application/{id}/message', methods: ['DELETE', 'GET'] },
+  { path: '/application/{id}/security', methods: ['PUT'] },
+  { path: '/auth/logout', methods: ['POST'] },
+  { path: '/client', methods: ['GET', 'POST'] },
+  { path: '/client/{id}', methods: ['DELETE', 'GET', 'PUT'] },
+  { path: '/client/{id}/push-state', methods: ['PUT'] },
+  { path: '/current/user', methods: ['GET'] },
+  { path: '/current/user/password', methods: ['POST'] },
+  { path: '/health', methods: ['GET'] },
+  { path: '/image/{filename}', methods: ['GET'] },
+  { path: '/init/admin', methods: ['POST'] },
+  { path: '/init/status', methods: ['GET'] },
+  { path: '/message', methods: ['DELETE', 'GET', 'POST'] },
+  { path: '/message/{id}', methods: ['DELETE', 'GET'] },
+  { path: '/plugin', methods: ['GET', 'POST'] },
+  { path: '/plugin/{id}', methods: ['DELETE'] },
+  { path: '/plugin/{id}/config', methods: ['GET', 'POST'] },
+  { path: '/plugin/{id}/disable', methods: ['POST'] },
+  { path: '/plugin/{id}/display', methods: ['GET'] },
+  { path: '/plugin/{id}/enable', methods: ['POST'] },
+  { path: '/plugin/{id}/image', methods: ['DELETE', 'POST'] },
+  { path: '/plugin/{id}/logs', methods: ['GET'] },
+  { path: '/plugin/{id}/name', methods: ['PUT'] },
+  { path: '/static/defaultapp.png', methods: ['GET'] },
+  { path: '/status', methods: ['GET'] },
+  { path: '/stream', methods: ['GET'] },
+  { path: '/user', methods: ['GET', 'POST'] },
+  { path: '/user/{id}', methods: ['DELETE', 'GET', 'POST', 'PUT'] },
+  { path: '/user/{id}/applications', methods: ['GET'] },
+  { path: '/user/{id}/avatar', methods: ['DELETE', 'POST'] },
+  { path: '/user/{id}/clients', methods: ['GET'] },
+  { path: '/user/{id}/plugin-permissions', methods: ['GET', 'PUT'] },
+  { path: '/user/{id}/plugins', methods: ['GET'] },
+  { path: '/user/{id}/profile', methods: ['PUT'] },
+  { path: '/version', methods: ['GET'] }
+]
 
-export function runContractSnapshot(): Endpoint[] {
-  return expected;
+function readDocumentedEndpoints(): Endpoint[] {
+  const document = parse(readFileSync('tests/fixtures/api-contract.yaml', 'utf8')) as {
+    paths?: Record<string, Record<string, unknown>>
+  }
+
+  return Object.entries(document.paths ?? {})
+    .map(([path, operations]) => ({
+      path,
+      methods: Object.keys(operations)
+        .map((method) => method.toUpperCase() as Method)
+        .sort()
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
 }
+
+function readDocumentedResponses(path: string, method: string): string[] {
+  const document = parse(readFileSync('tests/fixtures/api-contract.yaml', 'utf8')) as {
+    paths?: Record<string, Record<string, { responses?: Record<string, unknown> }>>
+  }
+
+  return Object.keys(document.paths?.[path]?.[method]?.responses ?? {}).sort()
+}
+
+function readOperation(path: string, method: string): Record<string, any> {
+  const document = parse(readFileSync('tests/fixtures/api-contract.yaml', 'utf8')) as {
+    paths?: Record<string, Record<string, Record<string, any>>>
+  }
+
+  return document.paths?.[path]?.[method] ?? {}
+}
+
+describe('API contract', () => {
+  test('api-contract fixture path and method snapshot matches the expected contract', () => {
+    expect(readDocumentedEndpoints()).toEqual(expected)
+  })
+
+  test('api-contract fixture documents 400 for GET /message/{id}', () => {
+    expect(readDocumentedResponses('/message/{id}', 'get')).toEqual(
+      expect.arrayContaining(['200', '400', '401', '404'])
+    )
+  })
+
+  test('api-contract fixture documents 409 for PUT /client/{id}/push-state', () => {
+    expect(readDocumentedResponses('/client/{id}/push-state', 'put')).toEqual(
+      expect.arrayContaining(['200', '400', '401', '404', '409'])
+    )
+  })
+
+  test('api-contract fixture documents Woe priority range 0..3 for POST /message', () => {
+    const schema = readOperation('/message', 'post').requestBody.content['application/json'].schema
+
+    expect(schema.properties.priority.minimum).toBe(0)
+    expect(schema.properties.priority.maximum).toBe(3)
+    expect(schema.properties.priority.description).toContain('0-3')
+  })
+
+  test('api-contract fixture requires client token or basic auth for GET /current/user', () => {
+    expect(readOperation('/current/user', 'get').security).toEqual([
+      { ClientToken: [] },
+      { BasicAuth: [] }
+    ])
+  })
+
+  test('api-contract fixture requires client token or basic auth for GET /stream', () => {
+    expect(readOperation('/stream', 'get').security).toEqual([
+      { ClientToken: [] },
+      { BasicAuth: [] }
+    ])
+  })
+
+  test('api-contract fixture documents POST /user as optional anonymous or client/basic auth only', () => {
+    expect(readOperation('/user', 'post').security).toEqual([
+      {},
+      { ClientToken: [] },
+      { BasicAuth: [] }
+    ])
+  })
+
+  test('api-contract fixture documents sortKey on Application and ApplicationParams', () => {
+    const document = parse(readFileSync('tests/fixtures/api-contract.yaml', 'utf8')) as {
+      components?: { schemas?: Record<string, { properties?: Record<string, { type?: string }> }> }
+    }
+
+    const applicationSchema = document.components?.schemas?.Application
+    const applicationParamsSchema = document.components?.schemas?.ApplicationParams
+
+    expect(applicationSchema?.properties?.sortKey?.type).toBe('string')
+    expect(applicationParamsSchema?.properties?.sortKey?.type).toBe('string')
+  })
+
+  test('api-contract fixture documents plugin metadata fields on PluginConf', () => {
+    const document = parse(readFileSync('tests/fixtures/api-contract.yaml', 'utf8')) as {
+      components?: { schemas?: Record<string, { properties?: Record<string, { type?: string; items?: { type?: string } }> }> }
+    }
+
+    const pluginConfSchema = document.components?.schemas?.PluginConf
+
+    expect(pluginConfSchema?.properties?.capabilities?.type).toBe('array')
+    expect(pluginConfSchema?.properties?.capabilities?.items?.type).toBe('string')
+    expect(pluginConfSchema?.properties?.author?.type).toBe('string')
+    expect(pluginConfSchema?.properties?.license?.type).toBe('string')
+    expect(pluginConfSchema?.properties?.website?.type).toBe('string')
+    expect(pluginConfSchema?.properties?.configExample?.type).toBe('string')
+  })
+
+  test('api-contract fixture marks required fields for Application, PluginConf and VersionInfo', () => {
+    const document = parse(readFileSync('tests/fixtures/api-contract.yaml', 'utf8')) as {
+      components?: { schemas?: Record<string, { required?: string[] }> }
+    }
+
+    const applicationRequired = document.components?.schemas?.Application?.required ?? []
+    const pluginConfRequired = document.components?.schemas?.PluginConf?.required ?? []
+    const versionInfoRequired = document.components?.schemas?.VersionInfo?.required ?? []
+
+    expect(applicationRequired).toEqual(
+      expect.arrayContaining(['id', 'token', 'name', 'sortKey', 'description', 'internal', 'image'])
+    )
+    expect(pluginConfRequired).toEqual(
+      expect.arrayContaining(['id', 'name', 'token', 'modulePath', 'enabled', 'capabilities'])
+    )
+    expect(versionInfoRequired).toEqual(
+      expect.arrayContaining(['version', 'commit', 'buildDate'])
+    )
+  })
+})

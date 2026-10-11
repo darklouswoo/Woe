@@ -2,7 +2,7 @@
   <div class="empty-state" :class="[`empty-state-${size}`, { 'empty-state-compact': compact }]">
     <div class="empty-state-icon">
       <slot name="icon">
-        <!-- Default icon based on type -->
+
         <svg v-if="type === 'messages'" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
@@ -35,16 +35,16 @@
         </svg>
       </slot>
     </div>
-    
+
     <div class="empty-state-content">
       <h3 class="empty-state-title">
         <slot name="title">{{ title }}</slot>
       </h3>
-      
+
       <p v-if="$slots.description || description" class="empty-state-description">
         <slot name="description">{{ description }}</slot>
       </p>
-      
+
       <div v-if="$slots.actions" class="empty-state-actions">
         <slot name="actions"></slot>
       </div>
@@ -76,7 +76,7 @@ withDefaults(defineProps<Props>(), {
   justify-content: center;
   text-align: center;
   padding: 2rem 1rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .empty-state-small {
@@ -126,7 +126,7 @@ withDefaults(defineProps<Props>(), {
 .empty-state-title {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text-secondary);
   margin-bottom: 0.5rem;
 }
 
@@ -142,7 +142,7 @@ withDefaults(defineProps<Props>(), {
   font-size: 0.875rem;
   line-height: 1.5;
   margin-bottom: 1.5rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .empty-state-small .empty-state-description {
@@ -168,33 +168,33 @@ withDefaults(defineProps<Props>(), {
 
 .empty-state-actions :deep(a) {
   text-decoration: none;
-  color: #3b82f6;
+  color: var(--color-primary);
   font-weight: 500;
   transition: color 0.2s;
 }
 
 .empty-state-actions :deep(a:hover) {
-  color: #2563eb;
+  color: var(--color-primary-hover);
 }
 
-/* 响应式设计 */
+
 @media (max-width: 640px) {
   .empty-state {
     padding: 1.5rem 0.75rem;
   }
-  
+
   .empty-state-small {
     padding: 1rem 0.75rem;
   }
-  
+
   .empty-state-large {
     padding: 2rem 0.75rem;
   }
-  
+
   .empty-state-actions {
     width: 100%;
   }
-  
+
   .empty-state-actions :deep(button) {
     width: 100%;
   }

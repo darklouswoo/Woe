@@ -28,14 +28,35 @@
         </router-link>
       </div>
       <div class="nav-user">
-        <!-- 新增：语言切换按钮 -->
+
         <div class="language-switcher">
           <button
             @click="toggleLanguage"
             class="lang-btn"
             :title="$t('common.switchLanguage')"
           >
-            {{ currentLocale === 'zh-CN' ? '🇨🇳 中文' : '🇺🇸 English' }}
+            {{ currentLocale === 'zh-CN' ? 'EN' : '中文' }}
+          </button>
+        </div>
+
+
+        <div class="theme-switcher">
+          <button
+            @click="toggleTheme"
+            class="theme-btn"
+            :title="themeModeLabel"
+          >
+            <svg v-if="themeMode === 'light'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32 1.41-1.41"/>
+            </svg>
+            <svg v-else-if="themeMode === 'dark'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <path d="M8 21h8m-4-4v4"/>
+            </svg>
           </button>
         </div>
 
@@ -62,32 +83,56 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
 import UserAvatar from './UserAvatar.vue'
 import EditProfileModal from './EditProfileModal.vue'
 
 const authStore = useAuthStore()
+const themeStore = useThemeStore()
 const router = useRouter()
-const { locale } = useI18n()
+const { locale, t } = useI18n()
 
 const showProfileModal = ref(false)
 
 const currentLocale = computed(() => locale.value)
 
+
+const themeMode = computed(() => themeStore.mode)
+const themeModeLabel = computed(() => {
+  if (themeMode.value === 'light') return t('common.themeLight')
+  if (themeMode.value === 'dark') return t('common.themeDark')
+  return t('common.themeAuto')
+})
+
 const logout = () => {
-  authStore.logout()
+
+  void authStore.logout().then((result) => {
+    if (result === 'not-confirmed') {
+
+
+      console.warn('Logout: server revocation not confirmed; the credential may still be valid')
+    } else if (result === 'already-unusable') {
+
+      console.info('Logout: credential already rejected by server (revocation outcome unconfirmed)')
+    }
+  })
   router.push('/login')
 }
 
-// 新增：切换语言
+
 const toggleLanguage = () => {
   const newLocale = locale.value === 'zh-CN' ? 'en-US' : 'zh-CN'
   locale.value = newLocale
   localStorage.setItem('locale', newLocale)
+}
+
+
+const toggleTheme = () => {
+  themeStore.toggleTheme()
 }
 
 const handleProfileUpdated = (user: any) => {
@@ -100,6 +145,7 @@ const handleProfileUpdated = (user: any) => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  transition: var(--theme-transition);
 }
 
 .navbar {
@@ -108,13 +154,14 @@ const handleProfileUpdated = (user: any) => {
   justify-content: space-between;
   padding: 0 2rem;
   height: 60px;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
+  box-shadow: var(--shadow-sm);
+  transition: var(--theme-transition);
 }
 
 .nav-brand h1 {
-  color: #1f2937;
+  color: var(--color-text-primary);
   font-size: 1.5rem;
   font-weight: bold;
 }
@@ -126,20 +173,20 @@ const handleProfileUpdated = (user: any) => {
 
 .nav-item {
   padding: 0.5rem 1rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   text-decoration: none;
   border-radius: 0.375rem;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
 }
 
 .nav-item:hover {
-  color: #1f2937;
-  background-color: #f3f4f6;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-hover);
 }
 
 .nav-item.active {
-  color: #1f2937;
-  background-color: #e5e7eb;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-active);
 }
 
 .nav-user {
@@ -159,18 +206,18 @@ const handleProfileUpdated = (user: any) => {
 }
 
 .user-profile:hover {
-  background-color: #f3f4f6;
+  background-color: var(--color-bg-hover);
 }
 
 .user-info {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
 }
 
 .logout-btn {
   padding: 0.5rem 1rem;
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
@@ -182,32 +229,41 @@ const handleProfileUpdated = (user: any) => {
   background-color: #dc2626;
 }
 
-/* 新增：语言切换按钮样式 */
-.language-switcher {
+
+.language-switcher,
+.theme-switcher {
   display: flex;
   align-items: center;
 }
 
-.lang-btn {
-  padding: 0.5rem 1rem;
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+.lang-btn,
+.theme-btn {
+  padding: 0.5rem;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-primary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
 }
 
-.lang-btn:hover {
-  background-color: #e5e7eb;
-  border-color: #9ca3af;
+.lang-btn:hover,
+.theme-btn:hover {
+  background-color: var(--color-bg-hover);
+  border-color: var(--color-border-secondary);
 }
 
 .main-content {
   flex: 1;
   padding: 2rem;
+  background-color: var(--color-bg-secondary);
+  transition: var(--theme-transition);
 }
 
 @media (max-width: 768px) {
@@ -223,9 +279,9 @@ const handleProfileUpdated = (user: any) => {
     justify-content: center;
   }
 
-  .language-switcher {
+  .language-switcher,
+  .theme-switcher {
     order: -1;
-    margin-bottom: 0.5rem;
   }
 
   .main-content {

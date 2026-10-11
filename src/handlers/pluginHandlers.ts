@@ -1,14 +1,26 @@
+
+
+
+
+
+
 import { PluginConf } from "../types/index.ts";
-import { ApiResponse, safeJsonParse } from "../utils/response.ts";
-import { validateImageFile } from "../utils/fileValidation.ts";
+import { ApiResponse, parseJsonBody, safeJsonParse, formatDate } from "../utils/response.ts";
+import { IMAGE_MAX_FILE_SIZE, validateImageFile, validateRawImageRequest } from "../utils/fileValidation.ts";
 import { DrizzleDB } from "../drizzle/index.ts";
 import { pluginConfigs, pluginLogs, userPluginPermissions } from "../models/index.ts";
 import { eq, sql, desc, and, inArray } from "drizzle-orm";
+import { BUILTIN_PLUGINS } from "../constants/builtinPlugins.ts";
+import { ImageCompressionError, ImageCompressionService } from "../services/imageCompressionService.ts";
+import { randomTokenString, TOKEN_RANDOM_LENGTH } from "../middleware/auth.ts";
+import { normalizeMediaPath } from "../utils/mediaPath.ts";
+
 
 export class PluginHandlers {
   constructor(private drizzle: DrizzleDB) {}
 
-  // Helper to get user's permitted plugin module paths
+
+
   private async getUserPermittedPlugins(userId: number): Promise<Set<string>> {
     const permissions = await this.drizzle
       .select({ modulePath: userPluginPermissions.modulePath })
@@ -17,7 +29,8 @@ export class PluginHandlers {
     return new Set(permissions.map(p => p.modulePath));
   }
 
-  // Helper to check if user has permission for a specific plugin
+
+
   private async hasPluginPermission(userId: number, modulePath: string): Promise<boolean> {
     const permission = await this.drizzle
       .select({ id: userPluginPermissions.id })
@@ -30,7 +43,9 @@ export class PluginHandlers {
     return !!permission;
   }
 
-  // Helper to map DB result to PluginConf type
+
+
+
   private mapToPluginConf(row: any): PluginConf {
     return {
       id: row.id,
@@ -38,22 +53,20 @@ export class PluginHandlers {
       token: row.token,
       modulePath: row.module_path,
       enabled: Boolean(row.enabled),
-      icon: row.icon,
+      icon: row.icon ? normalizeMediaPath(row.icon) : row.icon,
       capabilities: safeJsonParse(row.capabilities) || [],
       author: row.author,
       license: row.license,
-      website: row.website
+      website: row.website,
+      createdAt: formatDate(row.createdAt) ?? null
     };
   }
 
+
   private generatePluginToken(): string {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-    let randomPart = "";
-    for (let i = 0; i < 10; i++) {
-      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return "P" + randomPart;
+    return "P" + randomTokenString(TOKEN_RANDOM_LENGTH);
   }
+
 
   private async getConfigExample(modulePath: string): Promise<string> {
     try {
@@ -66,44 +79,14 @@ export class PluginHandlers {
     }
   }
 
-  private async ensureDefaultPlugins(userId: number): Promise<void> {
-    const existingRes = await this.drizzle
-      .select({ modulePath: pluginConfigs.modulePath })
-      .from(pluginConfigs)
-      .where(eq(pluginConfigs.userId, userId));
 
-    const existing = new Set(existingRes.map(r => r.modulePath));
 
-    const builtins = [
-      { modulePath: 'builtin/webhooker', name: 'Webhooker', capabilities: ['webhooker', 'messenger'] },
-      { modulePath: 'builtin/displayer', name: 'Displayer', capabilities: ['displayer'] }
-    ];
-
-    for (const b of builtins) {
-      if (!existing.has(b.modulePath)) {
-        const token = this.generatePluginToken();
-        await this.drizzle
-          .insert(pluginConfigs)
-          .values({
-            userId,
-            name: b.name,
-            token,
-            modulePath: b.modulePath,
-            enabled: 0,
-            configYaml: ''
-          });
-      }
-    }
-  }
-
-  // GET /plugin - Return all plugins for the authenticated user
   async getAllPlugins(userId: number, isAdmin: boolean = false): Promise<Response> {
     try {
-      await this.ensureDefaultPlugins(userId);
-      
-      // Get user's permitted plugins (only applies to non-admin)
+
       const permittedPlugins = isAdmin ? null : await this.getUserPermittedPlugins(userId);
-      
+      const pluginMetadata = new Map(BUILTIN_PLUGINS.map((plugin) => [plugin.modulePath, plugin]));
+
       const results = await this.drizzle
         .select({
           id: pluginConfigs.id,
@@ -113,19 +96,21 @@ export class PluginHandlers {
           modulePath: pluginConfigs.modulePath,
           enabled: pluginConfigs.enabled,
           icon: pluginConfigs.icon,
-          configYaml: pluginConfigs.configYaml
+          configYaml: pluginConfigs.configYaml,
+          createdAt: pluginConfigs.createdAt
         })
         .from(pluginConfigs)
         .where(eq(pluginConfigs.userId, userId))
         .orderBy(pluginConfigs.id);
 
-      // Filter by permissions for non-admin users
-      const filteredResults = isAdmin 
-        ? results 
+
+      const filteredResults = isAdmin
+        ? results
         : results.filter(r => permittedPlugins!.has(r.modulePath));
 
       const plugins = await Promise.all(
         filteredResults.map(async (row) => {
+          const metadata = pluginMetadata.get(row.modulePath);
           const configExample = await this.getConfigExample(row.modulePath);
           return {
             id: row.id,
@@ -133,12 +118,14 @@ export class PluginHandlers {
             token: row.token,
             modulePath: row.modulePath,
             enabled: Boolean(row.enabled),
-            icon: row.icon,
-            capabilities: [],
-            author: '',
-            license: '',
-            website: '',
-            configExample: configExample
+
+            icon: row.icon ? normalizeMediaPath(row.icon) : row.icon,
+            capabilities: metadata?.capabilities || [],
+            author: metadata?.author || '',
+            license: metadata?.license || '',
+            website: metadata?.website || '',
+            configExample: configExample,
+            createdAt: formatDate(row.createdAt) ?? null
           };
         })
       );
@@ -150,7 +137,14 @@ export class PluginHandlers {
     }
   }
 
-  // GET /plugin/{id}/config - Get YAML configuration for Configurer plugin
+
+
+  async getAvailablePlugins(): Promise<Response> {
+    return ApiResponse.json(BUILTIN_PLUGINS);
+  }
+
+
+
   async getPluginConfig(userId: number, id: string, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -159,9 +153,9 @@ export class PluginHandlers {
       }
 
       const result = await this.drizzle
-        .select({ 
+        .select({
           configYaml: pluginConfigs.configYaml,
-          modulePath: pluginConfigs.modulePath 
+          modulePath: pluginConfigs.modulePath
         })
         .from(pluginConfigs)
         .where(sql`${pluginConfigs.id} = ${pluginId} AND ${pluginConfigs.userId} = ${userId}`)
@@ -171,7 +165,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, result.modulePath);
         if (!hasPermission) {
@@ -179,10 +173,10 @@ export class PluginHandlers {
         }
       }
 
-      // Return YAML config as plain text if it exists, otherwise return empty string
+
       const configYaml = result.configYaml || "";
 
-      // If no config exists, return empty YAML document with correct content type
+
       if (!configYaml) {
         return new Response("", {
           status: 200,
@@ -192,7 +186,7 @@ export class PluginHandlers {
         });
       }
 
-      // Return as plain text with YAML content type
+
       return new Response(configYaml, {
         status: 200,
         headers: {
@@ -205,7 +199,8 @@ export class PluginHandlers {
     }
   }
 
-  // GET /plugin/{id}/logs - Return recent execution logs for a plugin
+
+
   async getPluginLogs(userId: number, id: string, limit: number = 50): Promise<Response> {
     try {
       const pluginId = parseInt(id)
@@ -234,7 +229,8 @@ export class PluginHandlers {
     }
   }
 
-  // POST /plugin/{id}/config - Update YAML configuration for Configurer plugin
+
+
   async updatePluginConfig(userId: number, id: string, request: Request, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -242,7 +238,7 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      // Verify plugin exists and belongs to user
+
       const plugin = await this.drizzle
         .select({ id: pluginConfigs.id, modulePath: pluginConfigs.modulePath })
         .from(pluginConfigs)
@@ -253,7 +249,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, plugin.modulePath);
         if (!hasPermission) {
@@ -261,16 +257,16 @@ export class PluginHandlers {
         }
       }
 
-      // Validate Content-Type is application/x-yaml
+
       const contentType = request.headers.get("content-type");
       if (!contentType || !contentType.includes("application/x-yaml")) {
         return ApiResponse.error("Bad Request", 400, "Content-Type must be application/x-yaml");
       }
 
-      // Read the request body as text (YAML content)
+
       const configYaml = await request.text();
 
-      // Update the config
+
       await this.drizzle
         .update(pluginConfigs)
         .set({
@@ -291,7 +287,8 @@ export class PluginHandlers {
     }
   }
 
-  // POST /plugin/{id}/enable - Enable a plugin
+
+
   async enablePlugin(userId: number, id: string, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -299,7 +296,7 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      // Get plugin info first to check permission
+
       const plugin = await this.drizzle
         .select({ id: pluginConfigs.id, modulePath: pluginConfigs.modulePath })
         .from(pluginConfigs)
@@ -310,7 +307,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found or no permission");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, plugin.modulePath);
         if (!hasPermission) {
@@ -318,7 +315,7 @@ export class PluginHandlers {
         }
       }
 
-      // Enable the plugin
+
       await this.drizzle
         .update(pluginConfigs)
         .set({
@@ -339,7 +336,8 @@ export class PluginHandlers {
     }
   }
 
-  // POST /plugin/{id}/disable - Disable a plugin
+
+
   async disablePlugin(userId: number, id: string, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -347,7 +345,7 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      // Get plugin info first to check permission
+
       const plugin = await this.drizzle
         .select({ id: pluginConfigs.id, modulePath: pluginConfigs.modulePath })
         .from(pluginConfigs)
@@ -358,7 +356,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found or no permission");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, plugin.modulePath);
         if (!hasPermission) {
@@ -366,7 +364,7 @@ export class PluginHandlers {
         }
       }
 
-      // Disable the plugin
+
       await this.drizzle
         .update(pluginConfigs)
         .set({
@@ -387,7 +385,8 @@ export class PluginHandlers {
     }
   }
 
-  // GET /plugin/{id}/display - Get display info for Displayer plugin
+
+
   async getPluginDisplay(userId: number, id: string): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -412,7 +411,7 @@ export class PluginHandlers {
       }
 
       if (!Boolean(pluginConfig.enabled)) {
-        return ApiResponse.json({})
+        return ApiResponse.error("Forbidden", 403, "Plugin is disabled");
       }
 
       try {
@@ -421,7 +420,7 @@ export class PluginHandlers {
         const { resolve } = await import('../plugins/registry.ts')
         const plugin = resolve(pluginConfig.modulePath, pluginConfig.id, pluginConfig.name)
         if (!plugin || !plugin.renderDisplay) {
-          return ApiResponse.json({})
+          return ApiResponse.json("")
         }
         await plugin.init({ config })
         const content = await plugin.renderDisplay({ userId, now: new Date().toISOString() })
@@ -435,24 +434,26 @@ export class PluginHandlers {
     }
   }
 
-  // POST /plugin - Create a new plugin instance (admin only)
+
+
   async createPlugin(adminUserId: number, request: Request): Promise<Response> {
     try {
-      const body = await request.json() as {
+      const parsed = await parseJsonBody<{
         modulePath?: string;
         name?: string;
         targetUserId?: number;
-      };
-      const { modulePath, name, targetUserId } = body;
+      }>(request);
+      if (!parsed.ok) return parsed.response;
+      const { modulePath, name, targetUserId } = parsed.data;
 
       if (!modulePath || !name) {
         return ApiResponse.error("Bad Request", 400, "modulePath and name are required");
       }
 
-      // Use targetUserId or admin's own ID
+
       const userId = targetUserId || adminUserId;
 
-      // Check if plugin type exists in registry
+
       try {
         const { resolve } = await import('../plugins/registry.ts');
         const plugin = resolve(modulePath, 0, '');
@@ -463,7 +464,7 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid modulePath");
       }
 
-      // Check for duplicate name
+
       const existing = await this.drizzle
         .select({ id: pluginConfigs.id })
         .from(pluginConfigs)
@@ -477,7 +478,7 @@ export class PluginHandlers {
         return ApiResponse.error("Conflict", 409, "Plugin with this name already exists");
       }
 
-      // Create new plugin instance
+
       const token = this.generatePluginToken();
       const result = await this.drizzle
         .insert(pluginConfigs)
@@ -489,51 +490,59 @@ export class PluginHandlers {
           enabled: 0,
           configYaml: ''
         })
-        .returning({ id: pluginConfigs.id });
+        .returning({ id: pluginConfigs.id, createdAt: pluginConfigs.createdAt });
 
-      // Invalidate cache for the target user
+
       try {
         const { PluginManager } = await import('../plugins/manager.ts');
         const pm = new PluginManager(this.drizzle);
         pm.invalidate(userId);
       } catch {}
 
-      return ApiResponse.json({ id: result[0].id, name, token, modulePath, enabled: false });
+      return ApiResponse.json({
+        id: result[0].id,
+        name,
+        token,
+        modulePath,
+        enabled: false,
+        createdAt: formatDate(result[0].createdAt) ?? null
+      });
     } catch (error) {
       console.error("Error creating plugin:", error);
       return ApiResponse.error("Database error", 500, "Failed to create plugin");
     }
   }
 
-  // DELETE /plugin/:id - Delete a plugin instance (admin only)
-  async deletePlugin(userId: number, id: string): Promise<Response> {
+
+
+  async deletePlugin(id: string): Promise<Response> {
     try {
       const pluginId = parseInt(id);
       if (isNaN(pluginId)) {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      // Get plugin info first
+
       const plugin = await this.drizzle
-        .select({ id: pluginConfigs.id, modulePath: pluginConfigs.modulePath })
+        .select({ id: pluginConfigs.id, userId: pluginConfigs.userId })
         .from(pluginConfigs)
-        .where(sql`${pluginConfigs.id} = ${pluginId} AND ${pluginConfigs.userId} = ${userId}`)
+        .where(eq(pluginConfigs.id, pluginId))
         .get();
 
       if (!plugin) {
         return ApiResponse.error("Not Found", 404, "Plugin not found");
       }
 
-      // Delete the plugin
+
       await this.drizzle
         .delete(pluginConfigs)
-        .where(sql`${pluginConfigs.id} = ${pluginId} AND ${pluginConfigs.userId} = ${userId}`);
+        .where(eq(pluginConfigs.id, pluginId));
 
-      // Invalidate cache
+
       try {
         const { PluginManager } = await import('../plugins/manager.ts');
         const pm = new PluginManager(this.drizzle);
-        pm.invalidate(userId);
+        pm.invalidate(plugin.userId);
       } catch {}
 
       return ApiResponse.json({});
@@ -543,7 +552,8 @@ export class PluginHandlers {
     }
   }
 
-  // PUT /plugin/{id}/name - Update plugin name
+
+
   async updatePluginName(userId: number, id: string, request: Request, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -551,8 +561,9 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      const body = await request.json() as { name?: string };
-      const { name } = body;
+      const parsed = await parseJsonBody<{ name?: string }>(request);
+      if (!parsed.ok) return parsed.response;
+      const { name } = parsed.data;
 
       if (!name || name.trim() === '') {
         return ApiResponse.error("Bad Request", 400, "Name is required");
@@ -560,7 +571,7 @@ export class PluginHandlers {
 
       const trimmedName = name.trim();
 
-      // Verify plugin exists and belongs to user
+
       const plugin = await this.drizzle
         .select({ id: pluginConfigs.id, modulePath: pluginConfigs.modulePath })
         .from(pluginConfigs)
@@ -571,7 +582,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, plugin.modulePath);
         if (!hasPermission) {
@@ -579,7 +590,7 @@ export class PluginHandlers {
         }
       }
 
-      // Check for duplicate name (excluding current plugin)
+
       const existing = await this.drizzle
         .select({ id: pluginConfigs.id })
         .from(pluginConfigs)
@@ -594,7 +605,7 @@ export class PluginHandlers {
         return ApiResponse.error("Conflict", 409, "A plugin with this name already exists");
       }
 
-      // Update the plugin name
+
       await this.drizzle
         .update(pluginConfigs)
         .set({
@@ -603,7 +614,7 @@ export class PluginHandlers {
         })
         .where(sql`${pluginConfigs.id} = ${pluginId} AND ${pluginConfigs.userId} = ${userId}`);
 
-      // Invalidate cache
+
       try {
         const { PluginManager } = await import('../plugins/manager.ts');
         const pm = new PluginManager(this.drizzle);
@@ -617,7 +628,8 @@ export class PluginHandlers {
     }
   }
 
-  // POST /plugin/{id}/image - Upload plugin icon
+
+
   async uploadPluginIcon(userId: number, id: string, request: Request, env: any, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -625,7 +637,7 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      // Verify plugin exists and belongs to user
+
       const plugin = await this.drizzle
         .select({ id: pluginConfigs.id, modulePath: pluginConfigs.modulePath, icon: pluginConfigs.icon })
         .from(pluginConfigs)
@@ -636,7 +648,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, plugin.modulePath);
         if (!hasPermission) {
@@ -644,12 +656,19 @@ export class PluginHandlers {
         }
       }
 
-      let fileBody: ArrayBuffer | ReadableStream | undefined;
+
+      if (!env.R2) {
+        return ApiResponse.error("Service Unavailable", 503, "R2 storage not configured");
+      }
+
+      let sourceBuffer: ArrayBuffer | undefined;
+
+      let fileBody: ArrayBuffer | undefined;
       let fileContentType: string | undefined;
 
       const contentType = request.headers.get("content-type");
 
-      // Handle multipart form data
+
       if (contentType && contentType.includes("multipart/form-data")) {
         const formData = await request.formData();
         const file = formData.get("file");
@@ -660,41 +679,48 @@ export class PluginHandlers {
 
         const fileBlob = file as Blob;
 
-        // Validate using file-type (checks magic numbers)
+
         const validation = await validateImageFile(fileBlob);
         if (!validation.valid) {
           return ApiResponse.error("Bad Request", 400, validation.error || "Invalid image file");
         }
 
-        fileBody = await fileBlob.arrayBuffer();
+        sourceBuffer = await fileBlob.arrayBuffer();
         fileContentType = fileBlob.type;
       }
-      // Handle raw image body (alternative format)
-      else if (contentType && contentType.startsWith("image/")) {
-        fileBody = request.body!;
-        fileContentType = contentType;
+
+      else if (contentType && contentType.toLowerCase().startsWith("image/")) {
+        const validation = await validateRawImageRequest(request, IMAGE_MAX_FILE_SIZE);
+        if (!validation.valid || !validation.buffer || !validation.mime) {
+          return ApiResponse.error("Bad Request", 400, validation.error || "Invalid image file");
+        }
+        sourceBuffer = validation.buffer;
+        fileContentType = validation.mime;
       }
       else {
         return ApiResponse.error("Bad Request", 400, "Content-Type must be multipart/form-data or image/*");
       }
 
-      // Delete old icon from R2 if exists
-      if (plugin.icon && env.R2) {
-        const oldFilename = plugin.icon.replace("/api/v1/image/", "");
-        if (oldFilename) {
-          try {
-            await env.R2.delete(oldFilename);
-          } catch (e) {
-            console.warn("Failed to delete old icon:", e);
+      const compressor = new ImageCompressionService(this.drizzle, env);
+      try {
+        const compressed = await compressor.processImage(sourceBuffer!, fileContentType!);
+        fileBody = compressed.body;
+        fileContentType = compressed.contentType;
+      } catch (error) {
+        if (error instanceof ImageCompressionError) {
+          if (error.status === 503) {
+            return ApiResponse.error("Service Unavailable", 503, error.publicMessage);
           }
+          return ApiResponse.error("Internal Server Error", 500, error.publicMessage);
         }
+        throw error;
       }
 
-      // Generate unique filename
+
       const timestamp = Date.now();
       const filename = `plugin-images/${pluginId}-${timestamp}`;
 
-      // Upload to R2
+
       const object = await env.R2.put(filename, fileBody, {
         httpMetadata: {
           contentType: fileContentType,
@@ -705,7 +731,7 @@ export class PluginHandlers {
         return ApiResponse.error("Internal Server Error", 500, "Upload failed");
       }
 
-      // Update plugin with icon URL
+
       const iconUrl = `/api/v1/image/${filename}`;
       await this.drizzle
         .update(pluginConfigs)
@@ -715,22 +741,37 @@ export class PluginHandlers {
         })
         .where(sql`${pluginConfigs.id} = ${pluginId} AND ${pluginConfigs.userId} = ${userId}`);
 
-      // Invalidate cache
+
+
+      if (plugin.icon) {
+        const oldFilename = plugin.icon.replace("/api/v1/image/", "");
+        if (oldFilename && oldFilename !== filename) {
+          try {
+            await env.R2.delete(oldFilename);
+          } catch (e) {
+            console.warn("Failed to delete old icon:", e);
+          }
+        }
+      }
+
+
       try {
         const { PluginManager } = await import('../plugins/manager.ts');
         const pm = new PluginManager(this.drizzle);
         pm.invalidate(userId);
       } catch {}
 
-      return ApiResponse.json({ icon: iconUrl });
+
+      return ApiResponse.json({ icon: normalizeMediaPath(iconUrl) });
 
     } catch (error) {
       console.error("Error uploading plugin icon:", error);
-      return ApiResponse.error("Upload failed", 500, error instanceof Error ? error.message : "Unknown error");
+      return ApiResponse.error("Upload failed", 500, "Icon upload failed");
     }
   }
 
-  // DELETE /plugin/{id}/image - Delete plugin icon
+
+
   async deletePluginIcon(userId: number, id: string, env: any, isAdmin: boolean = false): Promise<Response> {
     try {
       const pluginId = parseInt(id);
@@ -738,7 +779,7 @@ export class PluginHandlers {
         return ApiResponse.error("Bad Request", 400, "Invalid plugin ID");
       }
 
-      // Get current icon URL
+
       const plugin = await this.drizzle
         .select({ icon: pluginConfigs.icon, modulePath: pluginConfigs.modulePath })
         .from(pluginConfigs)
@@ -749,7 +790,7 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "Plugin not found");
       }
 
-      // Check permission for non-admin users
+
       if (!isAdmin) {
         const hasPermission = await this.hasPluginPermission(userId, plugin.modulePath);
         if (!hasPermission) {
@@ -762,15 +803,15 @@ export class PluginHandlers {
         return ApiResponse.error("Not Found", 404, "No icon to delete");
       }
 
-      // Extract filename from URL
+
       const filename = currentIcon.replace("/api/v1/image/", "");
 
-      // Delete from R2 if available
+
       if (env.R2 && filename) {
         await env.R2.delete(filename);
       }
 
-      // Update plugin to remove icon reference
+
       await this.drizzle
         .update(pluginConfigs)
         .set({
@@ -779,7 +820,7 @@ export class PluginHandlers {
         })
         .where(sql`${pluginConfigs.id} = ${pluginId} AND ${pluginConfigs.userId} = ${userId}`);
 
-      // Invalidate cache
+
       try {
         const { PluginManager } = await import('../plugins/manager.ts');
         const pm = new PluginManager(this.drizzle);
@@ -790,7 +831,7 @@ export class PluginHandlers {
 
     } catch (error) {
       console.error("Error deleting plugin icon:", error);
-      return ApiResponse.error("Delete failed", 500, error instanceof Error ? error.message : "Unknown error");
+      return ApiResponse.error("Delete failed", 500, "Icon deletion failed");
     }
   }
 }

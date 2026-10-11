@@ -1,0 +1,2401 @@
+openapi: 3.0.3
+info:
+  title: Woe API
+  description: |
+    Gotify-compatible notification service running on Cloudflare Workers.
+
+    ## Authentication
+
+    The API supports two types of authentication:
+
+    1. **Basic Authentication** - Username and password (for user authentication)
+    2. **Token Authentication** - Using `X-Gotify-Key` header with:
+       - **Client Token** - For user-facing operations (read messages, manage resources)
+       - **Application Token** - Used by `POST /message` (the endpoint also accepts client-token and Basic authentication)
+
+    An `Authorization: Bearer <token>` header is also accepted (the scheme name
+    is matched case-insensitively; the token itself is never trimmed). Retained
+    deviation: a recognized Bearer scheme with an explicitly empty token counts
+    as submitted credentials and is rejected with 401 instead of falling back
+    to anonymous access. On the wire,
+    a trailing-whitespace-only `'Bearer '` value is normalized away by the
+    Fetch Headers layer and becomes indistinguishable from the bare scheme,
+    which is treated as no credentials (platform constraint).
+
+    ## Authorization Levels
+
+    - **Public** - No authentication required
+    - **User** - Requires any authenticated user
+    - **Admin** - Requires admin privileges
+    - **Elevated Admin** - Admin via Basic auth or an elevated client token (`POST /client/{id}/elevate`); admin user-management endpoints reject non-elevated sessions with 403
+    - **Client Token** - Requires client token or basic auth
+    - **App Token** - Requires application token
+
+    ## Compatibility Baseline
+
+    Behavior follows the Gotify server v3.1.1 behavior contract on the unchanged
+    REST API 2.1.0 routes: `paging.next` is a relative path; terminal and empty
+    pages return `paging.since: 0` (the last-page cursor is only set when
+    another page exists); application/client tokens are visible only once
+    (create/rotate responses; read responses return `token: ""`);
+    User/Application/Client/Plugin models serialize `createdAt`;
+    clients support `expiresAfterInactivitySeconds`/`expiresAt` inactivity expiry;
+    newly issued app/client tokens use the `gtfy…` EdDSA format (legacy `A…`/`C…`
+    tokens remain valid); `POST /message` binds JSON, urlencoded, multipart and
+    query-only requests per Gotify/Gin dispatch rules (the extras JSON-string
+    binding in non-JSON encodings is a Woe extension); `POST /user` defaults an
+    omitted or `null` `admin` to false; `PUT /application/{id}/security` treats
+    a missing/false/`null` `regenerateToken` as a validated no-op returning
+    `{}`. Media fields in responses (`image`/`avatar`/`icon`) use paths
+    relative to the service base URL (`image/...`, no leading slash;
+    applications without an image report `static/defaultapp.png`, served as a
+    real PNG at `GET /static/defaultapp.png` at both the root and `/api/v1`
+    entries); stored legacy values and R2 keys are unchanged and external
+    full URLs / data URLs pass through verbatim. `POST /auth/logout` is the
+    token-path subset of the upstream endpoint (token revocation only, no
+    cookie session; see the operation description for boundaries). Woe extensions and retained deviations (including the retained 0..3
+    message-priority restriction) are documented in this description;
+    implemented routes are not a claim of full behavioral compatibility.
+
+  version: 1.0.0
+  contact:
+    name: Woe API Support
+  license:
+    name: MIT
+
+servers:
+  - url: /api/v1
+    description: API v1
+  - url: /
+    description: Root path (legacy compatibility)
+
+tags:
+  - name: system
+    description: System health and status endpoints
+  - name: init
+    description: System initialization
+  - name: auth
+    description: Client token logout/revocation
+  - name: user
+    description: User management
+  - name: current
+    description: Current user operations
+  - name: application
+    description: Application management
+  - name: client
+    description: Client token management
+  - name: message
+    description: Message operations
+  - name: plugin
+    description: Plugin management
+  - name: stream
+    description: WebSocket streaming
+  - name: image
+    description: Image resource access
+
+security:
+  - BasicAuth: []
+  - ClientToken: []
+  - AppToken: []
+
+paths:
+  /health:
+    get:
+      tags:
+        - system
+      summary: Health check
+      description: Check system and database health status
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '500':
+          description: System unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /version:
+    get:
+      tags:
+        - system
+      summary: Get version information
+      description: >-
+        Returns version, commit, and build date generated at build/deploy time.
+        Reports Woe's own version, not the upstream Gotify version (retained
+        deviation).
+      operationId: getVersion
+      security: []
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
+
+  /status:
+    get:
+      tags:
+        - system
+      summary: Get system status
+      description: Returns initialization status, version, and health
+      operationId: getStatus
+      security: []
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+  /init/status:
+    get:
+      tags:
+        - init
+      summary: Get initialization status
+      description: Check if system is initialized
+      operationId: getInitStatus
+      security: []
+      responses:
+        '200':
+          description: Initialization status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  initialized:
+                    type: boolean
+
+  /init/admin:
+    post:
+      tags:
+        - init
+      summary: Create admin user
+      description: Initialize system by creating the first admin user (requires default credentials)
+      operationId: createAdminUser
+      security:
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - pass
+              properties:
+                name:
+                  type: string
+                  description: Admin username
+                pass:
+                  type: string
+                  description: Admin password
+      responses:
+        '200':
+          description: Admin created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /auth/logout:
+    post:
+      tags:
+        - auth
+      summary: Revoke the authenticated client token (logout)
+      description: >-
+        Token-path logout following Gotify v3.1.1 RequireClient semantics:
+        revokes the client credential that authenticated this request. A valid
+        client token works without elevation. The target is locked to the
+        authentication result (`userId` + `clientId` + the token snapshot
+        taken at authentication time): the request body and query parameters
+        cannot select a different client, and an internal snapshot guard
+        prevents a stale logout from deleting a re-logged-in rotated
+        credential for the same client id. A missing, invalid, or expired
+        client token (or an application token) is rejected with 401 (Gotify
+        error text). Token-path subset only: no Cookie is read and no
+        Set-Cookie is ever returned (not a full cookie-session
+        implementation).
+      operationId: logout
+      security:
+        - ClientToken: []
+      responses:
+        '200':
+          description: >-
+            Logout acknowledged (empty JSON object): the old client credential
+            can no longer authenticate.
+
+            Idempotent: also returned when the credential was already deleted
+            or rotated between authentication and execution (the new credential
+            stays valid, no stream is disconnected); retrying the revoked token
+            afterwards fails at the authentication layer with 401.
+
+            Revocation is a single atomic database batch: it deletes the client
+            row and cancels its pending/processing push deliveries (`status`
+            set to `dead`, last error `Client logged out`); pushes already
+            handed to the push vendor are not recalled.
+
+            The client's WebSocket/stream connection is disconnected
+            best-effort after commit: if the stream service is unavailable the
+            response is still 200, and already-established connections are not
+            guaranteed to be closed.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            Basic authentication is recognized but carries no client credential
+            to revoke (errorDescription is exactly `no client auth provided`);
+            the database is not modified and no stream is disconnected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: >-
+            Database failure: the revocation batch was rolled back atomically
+            and nothing was revoked (errorDescription `Failed to logout`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /current/user:
+    get:
+      tags:
+        - current
+      summary: Get current user
+      description: Get information about the authenticated user
+      operationId: getCurrentUser
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      responses:
+        '200':
+          description: Current user information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /current/user/password:
+    post:
+      tags:
+        - current
+      summary: Update current user password
+      description: Change password for the authenticated user
+      operationId: updateCurrentUserPassword
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - pass
+              properties:
+                pass:
+                  type: string
+                  description: New password
+      responses:
+        '200':
+          description: Password updated successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /user:
+    get:
+      tags:
+        - user
+      summary: Get all users
+      description: >-
+        List all users. Requires an elevated admin session (Gotify v3.1.1
+        RequireAdmin): Basic auth of an admin, or an admin client token with an
+        unexpired elevation (`POST /client/{id}/elevate`). Unauthenticated or
+        invalid credentials → 401; authenticated non-admin → 403; non-elevated
+        admin → 403 with `session not elevated, use basic auth or call /client:elevate`.
+      operationId: getAllUsers
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - user
+      summary: Create user
+      description: >-
+        Create a new user using Gotify baseline `{name, pass, admin}`.
+        Follows Gotify v3.1.1 OptionalAdmin semantics: unauthenticated ordinary
+        registration is allowed only when `REGISTRATION=true`, and only for
+        non-admin users (anonymous `admin: true` → 401
+        `you are not allowed to create an admin user`, never silently clamped);
+        when `REGISTRATION=false`, anonymous creation → 401
+        `you are not allowed to access this api`. Any authenticated request
+        must be an elevated admin (non-admin → 403 regardless of registration
+        switch; non-elevated admin → 403 session-not-elevated message).
+        `app token` is not accepted. `admin` follows the Gotify zero-value
+        binding: omitted or `null` defaults to `false` (the same normalized
+        boolean drives both authorization and persistence); any other JSON
+        type (string/number/array/object) → 400 `admin must be a boolean`.
+        Woe extension: `nickname`, `email`, and `description` are optional.
+      operationId: createUser
+      security:
+        - {}
+        - ClientToken: []
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - pass
+              properties:
+                name:
+                  type: string
+                pass:
+                  type: string
+                admin:
+                  type: boolean
+                  nullable: true
+                  default: false
+                  description: >-
+                    Optional (Gotify no-required-binding bool). Omitted or
+                    `null` → `false`; explicit `true`/`false` honored; any
+                    other JSON type → 400 `admin must be a boolean`.
+                nickname:
+                  type: string
+                  description: Optional Woe extension field. Defaults to `name` when omitted.
+                email:
+                  type: string
+                  description: Optional Woe extension field. Defaults to `needupdate@example.com` when omitted.
+                description:
+                  type: string
+                  description: Optional user profile description.
+      responses:
+        '200':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /user/{id}:
+    get:
+      tags:
+        - user
+      summary: Get user by ID
+      description: >-
+        Get user details. An admin viewing another user requires an elevated
+        admin session (Gotify v3.1.1 RequireAdmin). Woe extension (retained
+        deviation): viewing your own user (`/user/{id}` where id is the
+        authenticated user) stays accessible with a plain client token, no
+        elevation required.
+      operationId: getUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    put:
+      tags:
+        - user
+      summary: Update user
+      description: >-
+        Update user details. Requires an elevated admin session (Gotify v3.1.1
+        RequireAdmin): Basic auth of an admin, or an admin client token with an
+        unexpired elevation.
+      operationId: updateUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                pass:
+                  type: string
+                admin:
+                  type: boolean
+      responses:
+        '200':
+          description: User updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    post:
+      tags:
+        - user
+      summary: Update user (alternative)
+      description: >-
+        Update user details (alternative endpoint). Same semantics as
+        `PUT /user/{id}`: requires an elevated admin session.
+      operationId: updateUserPost
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                pass:
+                  type: string
+                admin:
+                  type: boolean
+      responses:
+        '200':
+          description: User updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      tags:
+        - user
+      summary: Delete user
+      description: >-
+        Delete a user. Requires an elevated admin session (Gotify v3.1.1
+        RequireAdmin).
+      operationId: deleteUser
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /user/{id}/applications:
+    get:
+      tags:
+        - user
+      summary: Get user applications
+      description: Get all applications owned by a user (admin only). Read responses return an empty `token` string (show-once semantics; see Application schema).
+      operationId: getUserApplications
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Application'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /user/{id}/clients:
+    get:
+      tags:
+        - user
+      summary: Get user clients
+      description: Get all clients owned by a user (admin only). Read responses return an empty `token` string (show-once semantics; see Client schema).
+      operationId: getUserClients
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /user/{id}/plugins:
+    get:
+      tags:
+        - user
+      summary: Get user plugins
+      description: Get all plugins accessible by a user (admin only)
+      operationId: getUserPlugins
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: List of plugins
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PluginConf'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /user/{id}/profile:
+    put:
+      tags:
+        - user
+      summary: Update user profile
+      description: Update user profile (nickname, email, description)
+      operationId: updateUserProfile
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname:
+                  type: string
+                email:
+                  type: string
+                description:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /user/{id}/avatar:
+    post:
+      tags:
+        - user
+      summary: Upload user avatar
+      description: Upload avatar image for user
+      operationId: uploadUserAvatar
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Avatar uploaded successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - user
+      summary: Delete user avatar
+      description: Remove user avatar image
+      operationId: deleteUserAvatar
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Avatar deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /user/{id}/plugin-permissions:
+    get:
+      tags:
+        - user
+      summary: Get user plugin permissions
+      description: Get plugin permissions for a user (admin only)
+      operationId: getUserPluginPermissions
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Plugin permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    put:
+      tags:
+        - user
+      summary: Update user plugin permissions
+      description: Update plugin permissions for a user (admin only)
+      operationId: updateUserPluginPermissions
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - modulePaths
+              properties:
+                modulePaths:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Permissions updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /application:
+    get:
+      tags:
+        - application
+      summary: Get all applications
+      description: >-
+        List all applications for the authenticated user. Read responses always
+        return `token: ""` (Gotify v3 show-once semantics); the real token is
+        only visible in the `POST /application` create response and the
+        `PUT /application/{id}/security` rotate response.
+      operationId: getAllApplications
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Application'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - application
+      summary: Create application
+      description: Create a new application
+      operationId: createApplication
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                defaultPriority:
+                  type: integer
+                sortKey:
+                  type: string
+                  description: Optional stable sort key. When omitted, server generates one.
+      responses:
+        '200':
+          description: >-
+            Application created successfully. The response carries the new
+            token exactly once: a `gtfy…` EdDSA private-form token
+            (`gtfya.<base64url(seed)>`; the database stores the public form).
+            Legacy `A…` tokens are no longer issued but remain valid for
+            authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /application/{id}:
+    get:
+      tags:
+        - application
+      summary: Get application by ID
+      description: Get application details. Read response returns an empty `token` string (show-once semantics).
+      operationId: getApplication
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Application details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - application
+      summary: Update application
+      description: Update application details
+      operationId: updateApplication
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                defaultPriority:
+                  type: integer
+                sortKey:
+                  type: string
+                  description: Optional stable sort key.
+      responses:
+        '200':
+          description: >-
+            Application updated successfully. Per upstream Gotify v3, the
+            response keeps the stored token value (for gtfy-issued applications
+            this is the public lookup form, not a usable two-segment
+            credential).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - application
+      summary: Delete application
+      description: Delete an application
+      operationId: deleteApplication
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Application deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /application/{id}/image:
+    post:
+      tags:
+        - application
+      summary: Upload application image
+      description: >-
+        Upload or replace the application image. Woe extensions beyond the
+        multipart `file` field: a raw `image/*` request body is also accepted.
+        The 200 response is the Application read model whose `image` field
+        carries the normalized relative path `image/<key>` (no leading slash,
+        relative to the service base URL). The stored database value keeps the
+        legacy format (`/api/v1/image/<key>`) and existing R2 keys are
+        unchanged; replacing an image does not delete the previous R2 object
+        (deletion only happens on the DELETE endpoint).
+      operationId: uploadApplicationImage
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: >-
+            Image uploaded/replaced successfully; returns the updated
+            Application read model (`token: ""`, `image` as the normalized
+            relative path).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      tags:
+        - application
+      summary: Delete application image
+      description: >-
+        Delete the application image. On success the R2 object is deleted, the
+        database `image` is set to NULL, and the response is the updated
+        complete Application read model (Gotify semantics): `token` is `""`
+        and an application without an image reports
+        `image: "static/defaultapp.png"` (response-only; never stored).
+        Deleting again when no image exists → 404 `No image to delete`.
+      operationId: deleteApplicationImage
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: >-
+            Image deleted successfully; returns the updated complete
+            Application read model (`token: ""`,
+            `image: "static/defaultapp.png"`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: >-
+            No image to delete (the application has no custom image), or the
+            application does not exist / is not owned by the caller.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /application/{id}/security:
+    put:
+      tags:
+        - application
+      summary: Application security update action (rotate token or validated no-op)
+      description: >-
+        Gotify `SecurityUpdateAction` dispatch. `regenerateToken` action
+        values: `true` rotates the application token (existing flow);
+        `false`, omitted, or `null` is a validated no-op — elevation,
+        existence, and strict owner checks still run, then the response is the
+        byte-exact empty object `{}` (no rotation, no token returned; the
+        route does not short-circuit before the resource checks). Any other
+        JSON type for `regenerateToken` → 400 `regenerateToken must be true`;
+        a non-object top-level body (array/scalar) → 400 `Invalid JSON body`.
+        Dangerous endpoint: requires an elevated session (Basic auth, or a
+        client token with an unexpired elevation from
+        `POST /client/{id}/elevate`); strict owner check (non-owner → 404),
+        no admin bypass.
+      operationId: updateApplicationSecurity
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                regenerateToken:
+                  type: boolean
+                  nullable: true
+                  description: >-
+                    `true` rotates; `false`/omitted/`null` is a validated
+                    no-op returning `{}`; any other JSON type → 400.
+      responses:
+        '200':
+          description: >-
+            Action executed. For `regenerateToken: true` the response
+            `{"regenerateToken": {"token": …}}` carries the new token exactly
+            once: a `gtfy…` EdDSA private-form token
+            (`gtfya.<base64url(seed)>`; the database stores the public form).
+            Legacy `A…` tokens are no longer issued but remain valid for
+            authentication. For `false`/omitted/`null` the response is the
+            byte-exact empty object `{}` (no `regenerateToken` key, no token).
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - type: object
+                    description: No-op response (byte-exact `{}`).
+                  - type: object
+                    properties:
+                      regenerateToken:
+                        type: object
+                        properties:
+                          token:
+                            type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /application/{id}/message:
+    get:
+      tags:
+        - application
+      summary: Get application messages
+      description: >-
+        Get all messages for a specific application. `paging.next` is a
+        relative path (Gotify v3), e.g. `/application/1/message?limit=100&since=23`;
+        present only when another page exists.
+      operationId: getApplicationMessages
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Since'
+      responses:
+        '200':
+          description: Paged messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedMessages'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - application
+      summary: Delete application messages
+      description: Delete all messages for a specific application
+      operationId: deleteApplicationMessages
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Messages deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /client:
+    get:
+      tags:
+        - client
+      summary: Get all clients
+      description: >-
+        List all client tokens for the authenticated user. Read responses
+        always return `token: ""` (Gotify v3 show-once semantics); the real
+        token is only visible in the `POST /client` create response.
+      operationId: getAllClients
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      responses:
+        '200':
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - client
+      summary: Create client
+      description: >-
+        Create or update a client token. If `deviceUid` already exists for the
+        same user, the existing client record is updated and a new client token
+        is issued. `expiresAfterInactivitySeconds` (0/absent = never expires)
+        is persisted together with the derived `expiresAt`; expired clients are
+        rejected at authentication time and cleaned up by the daily scheduled
+        job.
+      operationId: createClient
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                platform:
+                  type: string
+                  enum: [test-platform, test-platform-alt, web, unknown]
+                  default: unknown
+                deviceUid:
+                  type: string
+                  description: Stable device unique identifier. Unique within one user.
+                deviceToken:
+                  type: string
+                  description: Provider device push token.
+                appVersion:
+                  type: string
+                deviceModel:
+                  type: string
+                expiresAfterInactivitySeconds:
+                  type: integer
+                  minimum: 0
+                  description: >-
+                    Inactivity expiry window in seconds (Gotify v3). 0 or absent
+                    = never expires. Negative, non-integer, or values above
+                    100 years are rejected with 400.
+      responses:
+        '200':
+          description: >-
+            Client created successfully. The response carries the new token
+            exactly once: a `gtfy…` EdDSA private-form token
+            (`gtfyc.<base64url(seed)>`; the database stores the public form).
+            Legacy `C…` tokens are no longer issued but remain valid for
+            authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /client/{id}:
+    get:
+      tags:
+        - client
+      summary: Get client by ID
+      description: Get client token details. Read response returns an empty `token` string (show-once semantics).
+      operationId: getClient
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      responses:
+        '200':
+          description: Client details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - client
+      summary: Update client
+      description: >
+        Update a client's name and Woe device fields. This endpoint never
+        rotates or replaces the client token. A deviceUid that collides with
+        another client of the same user returns 409 and leaves the original
+        row unchanged. Unknown fields (including token and platform) are
+        silently ignored. Non-object JSON bodies (arrays, scalars, or null)
+        are rejected with 400 "Invalid JSON body".
+        `expiresAfterInactivitySeconds` is persisted (Gotify v3 client inactivity
+        expiry): the stored `expiresAt` is recomputed as
+        `(lastUsed ?? createdAt) + seconds`; 0 means never expires; negative,
+        non-integer, or values above 100 years are rejected with 400.
+        Per upstream Gotify v3, the update response keeps the stored token
+        value (for gtfy-issued clients this is the public lookup form, not a
+        usable two-segment credential).
+      operationId: updateClient
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: Required non-empty string, stored verbatim (whitespace-only names allowed, Gotify binding:"required" parity, no trim).
+                deviceUid:
+                  type: string
+                  nullable: true
+                  description: 'Woe extension. Tri-state: string = update (trimmed; trimmed-empty is rejected with 400), null = clear, absent = unchanged. Any other JSON type (number/boolean/array/object) for this field returns 400. Unique per user; collision with another client of the same user returns 409.'
+                deviceToken:
+                  type: string
+                  nullable: true
+                  description: 'Woe extension. Tri-state: string = update (trimmed; trimmed-empty is rejected with 400), null = clear, absent = unchanged. Any other JSON type (number/boolean/array/object) for this field returns 400. Setting a value refreshes tokenUpdatedAt and recovers tokenStatus invalid/expired to active; inactive clients stay inactive. Clearing (null) or omitting the field leaves tokenStatus untouched; clearing also clears tokenUpdatedAt. Never rotates the client token itself.'
+                expiresAfterInactivitySeconds:
+                  type: integer
+                  nullable: true
+                  description: >-
+                    Gotify v3 client inactivity expiry in seconds. Absent =
+                    unchanged; null or 0 = never expires (stored `expiresAt`
+                    cleared); positive = persisted and the stored `expiresAt`
+                    is recomputed as `(lastUsed ?? createdAt) + seconds`.
+                    Negative, non-integer, or values above 100 years are
+                    rejected with 400.
+      responses:
+        '200':
+          description: >-
+            Client updated successfully. The response keeps the stored token
+            value per upstream Gotify v3.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    delete:
+      tags:
+        - client
+      summary: Delete client
+      description: >-
+        Delete a client token. Dangerous endpoint: requires an elevated
+        session (Basic auth, or a client token with an unexpired elevation
+        from `POST /client/{id}/elevate`).
+      operationId: deleteClient
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      responses:
+        '200':
+          description: Client deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /client/{id}/push-state:
+    put:
+      tags:
+        - client
+      summary: Update client push state
+      description: Enable or disable future push delivery for a specific client device without clearing its stored device token.
+      operationId: updateClientPushState
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ClientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - state
+              properties:
+                state:
+                  type: string
+                  enum: [active, inactive]
+      responses:
+        '200':
+          description: Client push state updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Client not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Client cannot be activated without a device token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /message:
+    get:
+      tags:
+        - message
+      summary: Get all messages
+      description: >-
+        Get all messages for the authenticated user. `paging.next` is a
+        relative path (Gotify v3), e.g. `/message?limit=100&since=23`; present
+        only when another page exists.
+      operationId: getAllMessages
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Since'
+      responses:
+        '200':
+          description: Paged messages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedMessages'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - message
+      summary: Create message
+      description: >-
+        Send a new message. Gotify RequireApplicationOrClient semantics: application
+        token targets the token's own application (body appid is ignored); client token
+        and Basic auth must carry the owning application's appid. Request binding
+        follows Gotify/Gin dispatch rules: `application/json` binds only the body
+        (query message fields are never merged in);
+        `application/x-www-form-urlencoded` binds body first-values with query
+        filling only fields missing from the body; `multipart/form-data` binds
+        text fields only (a File part whose name collides with a message field →
+        400 `message must be a text field, not a file`; a missing boundary →
+        400; no attachment-upload capability is added); a missing or unknown
+        Content-Type takes the form default path, which reads only the query.
+        Duplicate fields take the first value; an explicitly empty body value is
+        a legal binding value and does not fall back to query. Token
+        authentication is resolved independently (a query `token` parameter
+        authenticates but is not a message field). Woe extension: in
+        urlencoded/multipart/query encodings, `extras` is bound from a
+        JSON-encoded string (upstream Gotify marks extras `form:"-"` and does
+        not bind it); invalid JSON → 400. The retained 0..3 priority
+        restriction applies to every encoding. Woe extension: while
+        the deployment maintenance gate (system_state enqueue_write_gate) is paused,
+        this endpoint returns 503 and no outbox row is enqueued.
+      operationId: createMessage
+      security:
+        - AppToken: []
+        - ClientToken: []
+        - BasicAuth: []
+      requestBody:
+        required: false
+        description: >-
+          Not required: query-only requests (no body, missing or unknown
+          Content-Type) bind their message fields from the query parameters
+          (`message`, `title`, `priority`, `appid`, `extras`).
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: The message content
+                title:
+                  type: string
+                  description: Message title
+                priority:
+                  type: integer
+                  description: >-
+                    Message priority (0-3, retained restriction). When omitted,
+                    Woe inherits the application's defaultPriority.
+                  minimum: 0
+                  maximum: 3
+                extras:
+                  type: object
+                  description: Additional data
+                appid:
+                  type: integer
+                  description: >-
+                    Owning application id. Required (and only meaningful) when
+                    authenticating with a client token or Basic auth; ignored when an
+                    application token is used (the token's own application is the target).
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: The message content
+                title:
+                  type: string
+                  description: Message title
+                priority:
+                  type: integer
+                  description: >-
+                    Message priority (0-3) as a decimal integer string; invalid
+                    integers are rejected with 400. An empty string
+                    (`priority=`) is an explicit 0; omitting the field falls
+                    back to the application's defaultPriority.
+                appid:
+                  type: integer
+                  description: >-
+                    Owning application id as a decimal integer string; invalid
+                    integers are rejected with 400. Required with client token /
+                    Basic auth.
+                extras:
+                  type: string
+                  description: >-
+                    Woe extension: additional data as a JSON-encoded string;
+                    invalid JSON is rejected with 400. (Upstream Gotify marks
+                    extras `form:"-"` and does not bind it for form requests.)
+            encoding:
+              priority:
+                style: form
+              appid:
+                style: form
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  description: >-
+                    The message content (text field; a File part with this
+                    name is rejected with 400).
+                title:
+                  type: string
+                  description: Message title (text field)
+                priority:
+                  type: integer
+                  description: >-
+                    Message priority (0-3) as a decimal integer text field;
+                    same strict-integer rules as urlencoded (`priority=` empty
+                    text is an explicit 0).
+                appid:
+                  type: integer
+                  description: >-
+                    Owning application id as a decimal integer text field.
+                extras:
+                  type: string
+                  description: >-
+                    Woe extension: additional data as a JSON-encoded text
+                    field; invalid JSON is rejected with 400.
+      responses:
+        '200':
+          description: Message created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+    delete:
+      tags:
+        - message
+      summary: Delete all messages
+      description: Delete all messages for the authenticated user
+      operationId: deleteAllMessages
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      responses:
+        '200':
+          description: All messages deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /message/{id}:
+    get:
+      tags:
+        - message
+      summary: Get message by id
+      description: Return a single message for the authenticated user
+      operationId: getMessageById
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Single message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - message
+      summary: Delete message
+      description: Delete a specific message
+      operationId: deleteMessage
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      responses:
+        '200':
+          description: Message deleted successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin:
+    get:
+      tags:
+        - plugin
+      summary: Get all plugins
+      description: List all plugins
+      operationId: getAllPlugins
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      responses:
+        '200':
+          description: List of plugins
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PluginConf'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - plugin
+      summary: Create plugin
+      description: Create a new plugin instance (admin only)
+      operationId: createPlugin
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - modulePath
+                - name
+              properties:
+                modulePath:
+                  type: string
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Plugin created successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /plugin/{id}:
+    delete:
+      tags:
+        - plugin
+      summary: Delete plugin
+      description: Delete a plugin instance (admin only)
+      operationId: deletePlugin
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Plugin deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /plugin/{id}/config:
+    get:
+      tags:
+        - plugin
+      summary: Get plugin config
+      description: Get plugin configuration
+      operationId: getPluginConfig
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Plugin configuration
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - plugin
+      summary: Update plugin config
+      description: Update plugin configuration
+      operationId: updatePluginConfig
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Configuration updated successfully
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin/{id}/enable:
+    post:
+      tags:
+        - plugin
+      summary: Enable plugin
+      description: Enable a plugin
+      operationId: enablePlugin
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Plugin enabled successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin/{id}/disable:
+    post:
+      tags:
+        - plugin
+      summary: Disable plugin
+      description: Disable a plugin
+      operationId: disablePlugin
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Plugin disabled successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin/{id}/display:
+    get:
+      tags:
+        - plugin
+      summary: Get plugin display
+      description: Get plugin display information. Returns JSON string payload; returns empty string when plugin does not support display.
+      operationId: getPluginDisplay
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Plugin display information
+          content:
+            application/json:
+              schema:
+                type: string
+                description: Rendered display content. Empty string when display is unsupported.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin/{id}/logs:
+    get:
+      tags:
+        - plugin
+      summary: Get plugin logs
+      description: Get plugin execution logs
+      operationId: getPluginLogs
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+        - name: limit
+          in: query
+          description: Maximum number of logs to return (1-200)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Plugin logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin/{id}/name:
+    put:
+      tags:
+        - plugin
+      summary: Update plugin name
+      description: Update plugin name
+      operationId: updatePluginName
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Plugin name updated successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /plugin/{id}/image:
+    post:
+      tags:
+        - plugin
+      summary: Upload plugin icon
+      description: Upload plugin icon image
+      operationId: uploadPluginIcon
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Icon uploaded successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - plugin
+      summary: Delete plugin icon
+      description: Delete plugin icon image
+      operationId: deletePluginIcon
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PluginId'
+      responses:
+        '200':
+          description: Icon deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /stream:
+    get:
+      tags:
+        - stream
+      summary: WebSocket stream
+      description: >-
+        WebSocket endpoint for real-time message streaming. Heartbeat: clients
+        keep the connection alive with a text `ping` frame, answered
+        automatically with a text `pong` (Workers platform cannot send
+        protocol-level server pings; retained deviation). The text ping also refreshes
+        client inactivity expiry (throttled, ~5 minutes).
+      operationId: streamMessages
+      security:
+        - ClientToken: []
+        - BasicAuth: []
+      responses:
+        '101':
+          description: WebSocket connection established
+        '200':
+          description: Non-WebSocket request acknowledged
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /static/defaultapp.png:
+    get:
+      tags:
+        - image
+      summary: Default application image
+      description: >-
+        The real default-application PNG resource (Gotify-aligned), served at
+        both the root path (`/static/defaultapp.png`) and the `/api/v1` entry
+        (`/api/v1/static/defaultapp.png`). Routing is layered: in deployment
+        the root entry is served directly by the platform assets layer
+        whenever the bundled asset exists (Cloudflare assets-first routing;
+        same PNG bytes, no Worker hop), so the Worker-validated route is the
+        failure/absent-asset path for the root entry, while the `/api/v1`
+        entry is always Worker-served, reading the bundled asset (identical
+        to the upstream Gotify `static/defaultapp.png` copy) and validating
+        PNG magic bytes at serve time. An SPA-HTML fallback, a missing asset,
+        or a non-PNG payload on a Worker-served path results in an explicit
+        error — never a masked success. The response value
+        `image: "static/defaultapp.png"` is response-only and is never
+        written to the database (an application without a custom image keeps
+        `image` NULL in storage).
+      operationId: getDefaultAppImage
+      security: []
+      responses:
+        '200':
+          description: Default application image (real PNG bytes)
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '500':
+          description: >-
+            Bundled asset missing or failed PNG validation (explicit error;
+            never SPA HTML).
+
+  /image/{filename}:
+    get:
+      tags:
+        - image
+      summary: Get image
+      description: >-
+        Retrieve uploaded image resources from R2 storage. Serves media under
+        both the legacy stored prefix (`/image/...`, `/api/v1/image/...`) and
+        the response-contract relative form (`image/...`) — the key after the
+        `/image/` prefix is resolved against R2 unchanged, so legacy stored
+        keys keep working alongside the normalized response values.
+      operationId: getImage
+      security: []
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          description: Image filename (R2 key after the /image/ prefix)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Image file
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+              description: Non-GIF uploads are converted to WebP when the Images binding is enabled.
+        '404':
+          description: Image not found
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+components:
+  securitySchemes:
+    BasicAuth:
+      type: http
+      scheme: basic
+      description: Basic authentication with username and password
+
+    ClientToken:
+      type: apiKey
+      in: header
+      name: X-Gotify-Key
+      description: >-
+        Client token for user operations. Newly issued tokens use the
+        `gtfyc.<base64url>` EdDSA format (private form); legacy `C…` tokens
+        remain valid.
+
+    AppToken:
+      type: apiKey
+      in: header
+      name: X-Gotify-Key
+      description: >-
+        Application token for sending messages. Newly issued tokens use the
+        `gtfya.<base64url>` EdDSA format (private form); legacy `A…` tokens
+        remain valid.
+
+  parameters:
+    UserId:
+      name: id
+      in: path
+      required: true
+      description: User ID
+      schema:
+        type: string
+
+    ApplicationId:
+      name: id
+      in: path
+      required: true
+      description: Application ID
+      schema:
+        type: string
+
+    ClientId:
+      name: id
+      in: path
+      required: true
+      description: Client ID
+      schema:
+        type: string
+
+    MessageId:
+      name: id
+      in: path
+      required: true
+      description: Message ID
+      schema:
+        type: string
+
+    PluginId:
+      name: id
+      in: path
+      required: true
+      description: Plugin ID
+      schema:
+        type: string
+
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of messages to return (1-200)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+
+    Since:
+      name: since
+      in: query
+      description: Return messages since this ID
+      schema:
+        type: integer
+        minimum: 0
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        nickname:
+          type: string
+        email:
+          type: string
+        avatar:
+          type: string
+        description:
+          type: string
+        admin:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 creation timestamp (Gotify v3); `null` for legacy rows.
+
+    CurrentUser:
+      description: >-
+        Gotify v3 CurrentUserExternal: the User shape plus session-scoped
+        fields. `clientId` is present only when authenticated with a client
+        token (omitted entirely for Basic auth, upstream
+        `json:"clientId,omitempty"`). `elevatedUntil` is present only when
+        client-authenticated AND the client's elevation is non-null and still
+        in the future (omitted when expired, upstream
+        `json:"elevatedUntil,omitempty"`).
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            clientId:
+              type: integer
+              description: The client id of the current session (client token auth only; omitted for Basic auth).
+            elevatedUntil:
+              type: string
+              format: date-time
+              description: The time until which the session is elevated (client token auth with unexpired elevation only).
+
+    Application:
+      type: object
+      required:
+        - id
+        - token
+        - name
+        - sortKey
+        - description
+        - internal
+        - image
+      properties:
+        id:
+          type: integer
+        token:
+          type: string
+          description: >-
+            Always `""` in read responses (Gotify v3 show-once semantics).
+            The real token is returned exactly once by `POST /application`
+            and `PUT /application/{id}/security` as a `gtfy…` EdDSA
+            private-form token; `PUT /application/{id}` update responses keep
+            the stored (public-form) token value per upstream v3. Legacy `A…`
+            tokens remain valid for authentication.
+        name:
+          type: string
+        sortKey:
+          type: string
+        description:
+          type: string
+        internal:
+          type: boolean
+        image:
+          type: string
+          description: >-
+            Media path relative to the service base URL (no leading slash):
+            `image/<key>` for applications with a custom image;
+            `static/defaultapp.png` when there is no custom image (fetchable
+            at `GET /static/defaultapp.png`, root and `/api/v1` entries).
+            Response-only normalization: stored legacy values
+            (`/api/v1/image/<key>`) and R2 keys are unchanged, and external
+            full URLs / data URLs pass through verbatim.
+        lastUsed:
+          type: string
+          format: date-time
+          nullable: true
+        defaultPriority:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 creation timestamp (Gotify v3); `null` for legacy rows.
+
+    ApplicationParams:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        defaultPriority:
+          type: integer
+        sortKey:
+          type: string
+          description: Optional stable sort key. When omitted, server generates one.
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: integer
+        token:
+          type: string
+          description: >-
+            Always `""` in read responses (Gotify v3 show-once semantics).
+            The real token is returned exactly once by `POST /client` as a
+            `gtfy…` EdDSA private-form token; `PUT /client/{id}` and
+            `PUT /client/{id}/push-state` update responses keep the stored
+            (public-form) token value per upstream v3. Legacy `C…` tokens
+            remain valid for authentication.
+        name:
+          type: string
+        platform:
+          type: string
+          enum: [test-platform, test-platform-alt, web, unknown]
+        deviceUid:
+          type: string
+          nullable: true
+        deviceToken:
+          type: string
+          nullable: true
+        tokenUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        tokenStatus:
+          type: string
+          enum: [active, inactive, invalid, expired]
+          nullable: true
+        appVersion:
+          type: string
+          nullable: true
+        deviceModel:
+          type: string
+          nullable: true
+        lastUsed:
+          type: string
+          format: date-time
+          nullable: true
+        elevatedUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: >-
+            Elevation expiry from `POST /client/{id}/elevate`; required for
+            admin endpoints and dangerous operations. An expired elevation
+            (`now >= elevatedUntil`) is serialized as `null` (field kept),
+            matching upstream gotify v3 `GetClients` semantics; applies to
+            list, single-get and write responses alike.
+        expiresAfterInactivitySeconds:
+          type: integer
+          description: >-
+            Gotify v3 inactivity expiry window in seconds; 0 = never expires.
+            The web frontend registers its own client with 604800 (a 7-day
+            rolling inactivity window); that is a frontend policy, not an API
+            default (clients created via the API still default to 0, never
+            expires).
+        expiresAt:
+          type: string
+          format: date-time
+          description: >-
+            Persisted inactivity expiry timestamp
+            (`(lastUsed ?? createdAt) + expiresAfterInactivitySeconds`).
+            Omitted when never expires (upstream `omitempty`). Authentication
+            rejects the token once `now >= expiresAt`; expired clients are
+            removed by the daily scheduled cleanup.
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 creation timestamp (Gotify v3); `null` for legacy rows.
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: integer
+        appid:
+          type: integer
+        message:
+          type: string
+        title:
+          type: string
+        priority:
+          type: integer
+        date:
+          type: string
+          format: date-time
+        extras:
+          type: object
+          description: >-
+            Additional data; optional. Valid top-level objects (including
+            `{}` and objects containing nested arrays) are returned verbatim.
+            Legacy stored values that are not valid objects (parse failures,
+            top-level strings/numbers/booleans/arrays, JSON null) are omitted
+            from the response rather than echoed — read-side normalization
+            only; no data cleansing is performed on stored rows.
+
+    PagedMessages:
+      type: object
+      properties:
+        paging:
+          $ref: '#/components/schemas/Paging'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    Paging:
+      type: object
+      properties:
+        size:
+          type: integer
+        since:
+          type: integer
+          description: >-
+            Continuation cursor (Gotify v3 semantics): the last message id of
+            this page, returned only when another page exists. Terminal pages
+            (including a last page that is exactly `limit` long) and empty
+            pages return 0 and never echo the requested `since`.
+        limit:
+          type: integer
+        next:
+          type: string
+          description: >-
+            Relative path to the next page (Gotify v3), e.g.
+            `/message?limit=100&since=23`. Present only when another page
+            exists.
+
+    PluginConf:
+      type: object
+      required:
+        - id
+        - name
+        - token
+        - modulePath
+        - enabled
+        - capabilities
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        token:
+          type: string
+          description: Plugin token (`P…` format). Plugin tokens are exempt from Gotify v3 show-once semantics and keep being returned in read responses.
+        modulePath:
+          type: string
+        enabled:
+          type: boolean
+        icon:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        author:
+          type: string
+        license:
+          type: string
+        website:
+          type: string
+        configExample:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC3339 creation timestamp (Gotify v3); `null` for legacy rows.
+
+    Health:
+      type: object
+      properties:
+        health:
+          type: string
+          enum: [green, red]
+        database:
+          type: string
+          enum: [green, red]
+
+    VersionInfo:
+      type: object
+      required:
+        - version
+        - commit
+        - buildDate
+      properties:
+        version:
+          type: string
+        commit:
+          type: string
+        buildDate:
+          type: string
+          format: date-time
+          description: Build-time timestamp generated before dev/deploy starts.
+
+    SystemStatus:
+      type: object
+      properties:
+        initialized:
+          type: boolean
+        version:
+          type: string
+        health:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        errorCode:
+          type: integer
+        errorDescription:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ServiceUnavailable:
+      description: Service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

@@ -26,70 +26,82 @@
               @delete="deleteIcon"
             />
           </div>
-          
+
           <div class="app-info">
             <h1 class="app-name">{{ application.name }}</h1>
             <p class="app-description">{{ application.description || t('applicationDetail.noDescription') }}</p>
-            
+
             <div class="app-meta">
               <div class="meta-item">
                 <span class="meta-label">{{ t('applicationDetail.appId') }}</span>
                 <span class="meta-value">{{ application.id }}</span>
               </div>
-              
+
               <div class="meta-item">
                 <span class="meta-label">{{ t('applicationDetail.defaultPriority') }}</span>
-                <span class="meta-value priority-badge priority-{{ application.defaultPriority }}">
+                <span class="meta-value priority-badge" :class="`priority-${Math.min(application.defaultPriority ?? 0, 3)}`">
                   {{ getPriorityLabel(application.defaultPriority) }}
                 </span>
               </div>
-              
+
               <div class="meta-item">
                 <span class="meta-label">{{ t('applicationDetail.lastUsed') }}</span>
-                <span class="meta-value">{{ formatDate(application.lastUsed || '') }}</span>
+                <span class="meta-value">{{ formatDate(application.lastUsed || '') || t('common.never') }}</span>
               </div>
-              
+
               <div class="meta-item">
                 <span class="meta-label">{{ t('applicationDetail.internal') }}</span>
                 <span class="meta-value">{{ application.internal ? t('common.yes') : t('common.no') }}</span>
               </div>
             </div>
-            
+
             <div class="app-actions">
               <button @click="showEditModal = true" class="edit-btn">{{ t('applicationDetail.editApplication') }}</button>
-              <button @click="copyToken" class="copy-btn">{{ t('applicationDetail.copyToken') }}</button>
+              <button v-if="knownToken" @click="copyToken" class="copy-btn">{{ t('applicationDetail.copyToken') }}</button>
               <button @click="confirmDelete" class="delete-btn">{{ t('applicationDetail.deleteApplication') }}</button>
             </div>
           </div>
         </div>
 
         <div class="application-sections">
-          <!-- Token Section -->
+
           <div class="section">
             <h2 class="section-title">{{ t('applicationDetail.tokenTitle') }}</h2>
             <div class="token-container">
-              <div class="token-display">
-                <code :class="{ 'token-hidden': !tokenVisible }">
-                  {{ tokenVisible ? application.token : '•••••••••••••••••••••' }}
-                </code>
-              </div>
-              <button @click="toggleTokenVisibility" class="token-toggle-btn">
-                <svg v-if="!tokenVisible" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M1 12s4-8 11-8 11 8"></path>
-                  <path d="M9.5 9a3 3 0 0 1 0 6"></path>
-                </svg>
-                <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 0 5.06 5.06M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 0-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                  <line x1="1" y1="1" x2="23" y2="23"></line>
-                </svg>
+              <template v-if="knownToken">
+                <div class="token-display">
+                  <code :class="{ 'token-hidden': !tokenVisible }">
+                    {{ tokenVisible ? knownToken : '•••••••••••••••••••••' }}
+                  </code>
+                  <button
+                    @click="toggleTokenVisibility"
+                    class="token-toggle-btn"
+                    :title="tokenVisible ? t('applicationDetail.hideToken') : t('applicationDetail.showToken')"
+                  >
+                    <svg v-if="!tokenVisible" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8"></path>
+                      <path d="M9.5 9a3 3 0 0 1 0 6"></path>
+                    </svg>
+                    <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 0 5.06 5.06M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 0-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                      <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                  </button>
+                </div>
+                <button @click="copyToken" class="token-copy-btn">
+                  {{ t('applicationDetail.copyToken') }}
+                </button>
+              </template>
+              <button @click="confirmRegenerateToken" class="regenerate-btn">
+                {{ t('applicationDetail.regenerateToken') }}
               </button>
             </div>
             <p class="token-description">
-              {{ t('applicationDetail.tokenDescription') }}
+              {{ knownToken ? t('applicationDetail.tokenDescription') : t('applicationDetail.tokenUnknownHint') }}
             </p>
           </div>
 
-          <!-- Messages Section -->
+
           <div class="section">
             <div class="section-header">
               <h2 class="section-title">{{ t('applicationDetail.recentMessages') }}</h2>
@@ -97,11 +109,11 @@
                 {{ t('applicationDetail.viewAllMessages') }}
               </router-link>
             </div>
-            
+
             <div v-if="messagesLoading" class="loading-container">
               <LoadingSpinner :text="t('applicationDetail.loadingMessages')" />
             </div>
-            
+
             <div v-else-if="messages.length === 0" class="empty-messages">
               <EmptyState
                 type="messages"
@@ -110,23 +122,23 @@
                 size="small"
               />
             </div>
-            
+
             <div v-else class="messages-list">
               <div v-for="message in messages" :key="message.id" class="message-item">
                 <div class="message-header">
                   <h4 class="message-title">{{ message.title || t('applicationDetail.noTitle') }}</h4>
-                  <span class="message-time">{{ formatTime(message.date) }}</span>
+                  <span class="message-time" :title="formatDateTime(message.date)">{{ formatRelativeTime(message.date) }}</span>
                 </div>
                 <p class="message-content">{{ message.message }}</p>
-                <div class="message-priority priority-{{ message.priority }}">
+                <div class="message-priority" :class="`priority-${Math.min(message.priority ?? 1, 3)}`">
                   {{ getPriorityLabel(message.priority) }}
                 </div>
               </div>
-              
+
               <div v-if="hasMoreMessages" class="load-more-container">
-                <button 
-                  @click="loadMoreMessages" 
-                  :disabled="loadingMoreMessages" 
+                <button
+                  @click="loadMoreMessages"
+                  :disabled="loadingMoreMessages"
                   class="load-more-btn"
                 >
                   <LoadingSpinner v-if="loadingMoreMessages" size="small" variant="dots" />
@@ -138,7 +150,7 @@
         </div>
       </div>
 
-      <!-- Edit Modal -->
+
       <EditApplicationModal
         v-if="showEditModal && application"
         :application="application"
@@ -159,22 +171,28 @@ import EmptyState from '@/components/EmptyState.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import EditApplicationModal from '@/components/EditApplicationModal.vue'
 import { applicationApi } from '@/services/api'
+import { authService } from '@/services/auth'
 import { showSuccess, showError } from '@/utils/errorHandler'
+import { formatRelativeTime, formatDateTime, formatDate } from '@/utils/datetime'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { useElevatedAction, isElevationCancelled } from '@/composables/useElevatedAction'
 import type { Application, Message, Paging } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
 const { confirm: confirmDialog } = useConfirmDialog()
+const { withElevation } = useElevatedAction()
 
 const application = ref<Application | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 const tokenVisible = ref(false)
+
+const knownToken = ref('')
 const showEditModal = ref(false)
 
-// Messages state
+
 const messages = ref<Message[]>([])
 const messagesLoading = ref(false)
 const loadingMoreMessages = ref(false)
@@ -189,42 +207,32 @@ const appId = computed(() => {
   return Number(route.params.id)
 })
 
-/**
- * 格式化日期
- * @param dateString - 日期字符串
- * @returns 格式化后的日期文本
- */
-const formatDate = (dateString: string) => {
-  if (!dateString) return t('common.never')
-  return new Date(dateString).toLocaleString()
-}
 
-const formatTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString()
-}
 
-/**
- * 获取优先级标签
- * @param priority - 优先级数值
- * @returns 优先级标签文本
- */
+
+
+
+
+
 const getPriorityLabel = (priority?: number) => {
   if (priority === undefined || priority === null) return t('common.priorityNormal')
   const labels = [t('common.priorityLow'), t('common.priorityNormal'), t('common.priorityHigh'), t('common.priorityEmergency')]
   return labels[Math.min(priority, 3)] || t('common.priorityNormal')
 }
 
-/**
- * 加载应用详情
- */
+
+
+
 const loadApplication = async () => {
   loading.value = true
   error.value = null
-  
+
   try {
     const response = await applicationApi.getApplication(appId.value)
     application.value = response.data
-    // Load initial messages after app is loaded
+
+    knownToken.value = authService.getAppToken(appId.value)?.token || ''
+
     loadMessages()
   } catch (err: any) {
     error.value = err.errorDescription || t('applicationDetail.loadError')
@@ -234,15 +242,17 @@ const loadApplication = async () => {
   }
 }
 
-/**
- * 加载消息列表
- */
+
+
+
 const loadMessages = async () => {
   messagesLoading.value = true
-  
+
   try {
     const response = await applicationApi.getApplicationMessages(appId.value, { limit: 20 })
-    messages.value = response.data.messages.reverse() // Show newest first
+
+
+    messages.value = response.data.messages
     messagePaging.value = response.data.paging
     hasMoreMessages.value = !!response.data.paging.next
   } catch (err: any) {
@@ -252,25 +262,25 @@ const loadMessages = async () => {
   }
 }
 
-/**
- * 加载更多消息
- */
+
+
+
 const loadMoreMessages = async () => {
   if (!hasMoreMessages.value || loadingMoreMessages.value) return
-  
+
   loadingMoreMessages.value = true
-  
+
   try {
     const params = {
       limit: messagePaging.value.limit,
       since: messagePaging.value.since
     }
     const response = await applicationApi.getApplicationMessages(appId.value, params)
-    
-    // Append older messages to the end
-    const olderMessages = response.data.messages.reverse()
+
+
+    const olderMessages = response.data.messages
     messages.value = [...messages.value, ...olderMessages]
-    
+
     messagePaging.value = response.data.paging
     hasMoreMessages.value = !!response.data.paging.next
   } catch (err: any) {
@@ -284,50 +294,92 @@ const toggleTokenVisibility = () => {
   tokenVisible.value = !tokenVisible.value
 }
 
-/**
- * 复制令牌到剪贴板
- */
+
+
+
 const copyToken = async () => {
-  if (!application.value) return
-  
+  if (!knownToken.value) return
+
   try {
-    await navigator.clipboard.writeText(application.value.token)
+    await navigator.clipboard.writeText(knownToken.value)
     showSuccess(t('applications.tokenCopied'))
   } catch (err) {
     showError(err as Error, t('applications.copyTokenError'))
   }
 }
 
-/**
- * 上传应用图标
- * @param file - 图片文件
- */
+
+
+
+const confirmRegenerateToken = async () => {
+  if (!application.value) return
+
+  const confirmed = await confirmDialog({
+    title: t('common.confirmDialog.title'),
+    message: t('applicationDetail.regenerateWarning'),
+    confirmText: t('common.confirmDialog.confirmButton'),
+    cancelText: t('common.confirmDialog.cancelButton'),
+    type: 'warning'
+  })
+
+  if (confirmed) {
+    regenerateToken()
+  }
+}
+
+
+
+
+const regenerateToken = async () => {
+  if (!application.value) return
+  const id = application.value.id
+
+  try {
+
+    const res = await withElevation(() => applicationApi.regenerateToken(id))
+    const newToken = res.data.regenerateToken.token
+
+    authService.setAppToken(id, newToken)
+    knownToken.value = newToken
+    tokenVisible.value = true
+    showSuccess(t('applicationDetail.regenerated'))
+  } catch (err: any) {
+    if (!isElevationCancelled(err)) {
+      showError(err, t('applicationDetail.regenerateFailed'))
+    }
+  }
+}
+
+
+
+
+
 const uploadIcon = async (file: File) => {
   if (!application.value) return
-  
+
   try {
     await applicationApi.uploadApplicationImage(application.value.id, file)
     showSuccess(t('applications.iconUploaded'))
-    // Reload application to get updated image
+
     await loadApplication()
   } catch (err: any) {
     showError(err, t('applications.uploadIconError'))
   }
 }
 
-/**
- * 删除应用图标
- */
+
+
+
 const deleteIcon = async () => {
   if (!application.value) return
-  
+
   try {
     await applicationApi.deleteApplicationImage(application.value.id)
     showSuccess(t('applications.iconDeleted'))
-    // Reload application to update UI
+
     await loadApplication()
   } catch (err: any) {
-    showError(err, 'Failed to delete icon')
+    showError(err, t('applications.deleteIconError'))
   }
 }
 
@@ -338,7 +390,7 @@ const handleApplicationUpdated = () => {
 
 const confirmDelete = async () => {
   if (!application.value) return
-  
+
   const confirmed = await confirmDialog({
     title: t('common.confirmDialog.title'),
     message: t('applications.deleteConfirmWithName', { name: application.value.name }),
@@ -346,24 +398,29 @@ const confirmDelete = async () => {
     cancelText: t('common.cancel'),
     type: 'danger'
   })
-  
+
   if (confirmed) {
     deleteApplication()
   }
 }
 
-/**
- * 删除应用
- */
+
+
+
 const deleteApplication = async () => {
   if (!application.value) return
-  
+  const id = application.value.id
+
   try {
-    await applicationApi.deleteApplication(application.value.id)
+
+    await withElevation(() => applicationApi.deleteApplication(id))
+    authService.removeAppToken(id)
     showSuccess(t('applications.deleteSuccess'))
     router.push('/applications')
   } catch (err: any) {
-    showError(err, t('applications.deleteError'))
+    if (!isElevationCancelled(err)) {
+      showError(err, t('applications.deleteError'))
+    }
   }
 }
 
@@ -409,8 +466,8 @@ onMounted(() => {
 }
 
 .retry-btn {
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   padding: 0.5rem 1rem;
@@ -427,9 +484,9 @@ onMounted(() => {
   display: flex;
   gap: 2rem;
   padding: 1.5rem;
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .app-icon-large {
@@ -446,12 +503,12 @@ onMounted(() => {
 .app-name {
   font-size: 1.875rem;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .app-description {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 1rem;
   line-height: 1.5;
 }
@@ -471,13 +528,13 @@ onMounted(() => {
 
 .meta-label {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-weight: 500;
 }
 
 .meta-value {
   font-size: 0.875rem;
-  color: #1f2937;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
@@ -488,8 +545,8 @@ onMounted(() => {
   font-weight: 500;
 }
 
-.priority-0 { background: #dbeafe; color: #1e40af; }
-.priority-1 { background: #f3f4f6; color: #374151; }
+.priority-0 { background: var(--color-info-bg); color: var(--color-info); }
+.priority-1 { background: var(--color-bg-hover); color: var(--color-text-secondary); }
 .priority-2 { background: #fef3c7; color: #92400e; }
 .priority-3 { background: #fecaca; color: #991b1b; }
 
@@ -499,28 +556,39 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.edit-btn, .copy-btn, .delete-btn {
+.edit-btn, .copy-btn, .delete-btn, .regenerate-btn {
   padding: 0.5rem 1rem;
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
+}
+
+.regenerate-btn {
+  margin-left: 0.5rem;
+  white-space: nowrap;
+  background-color: var(--color-warning);
+  color: var(--color-text-inverse);
+}
+
+.regenerate-btn:hover {
+  background-color: var(--color-warning-hover);
 }
 
 .edit-btn {
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 .edit-btn:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .copy-btn {
   background-color: #6366f1;
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .copy-btn:hover {
@@ -528,12 +596,12 @@ onMounted(() => {
 }
 
 .delete-btn {
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
 }
 
 .delete-btn:hover {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .application-sections {
@@ -543,9 +611,9 @@ onMounted(() => {
 }
 
 .section {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -559,21 +627,26 @@ onMounted(() => {
 .section-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
   padding: 0 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+
+.section > .section-title {
+  padding-top: 1.5rem;
 }
 
 .view-all-btn {
-  color: #3b82f6;
+  color: var(--color-primary);
   text-decoration: none;
   font-size: 0.875rem;
   font-weight: 500;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .view-all-btn:hover {
@@ -587,8 +660,8 @@ onMounted(() => {
 .token-display {
   display: flex;
   align-items: center;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.5rem;
   padding: 0.75rem;
   margin-bottom: 1rem;
@@ -597,7 +670,7 @@ onMounted(() => {
 .token-display code {
   font-family: 'Courier New', monospace;
   font-size: 0.875rem;
-  color: #1e293b;
+  color: var(--color-text-primary);
   background: transparent;
   flex: 1;
   word-break: break-all;
@@ -607,10 +680,28 @@ onMounted(() => {
   letter-spacing: 2px;
 }
 
+.token-copy-btn {
+  margin-left: 0.5rem;
+  white-space: nowrap;
+  background-color: #6366f1;
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: 0.375rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: var(--theme-transition);
+}
+
+.token-copy-btn:hover {
+  background-color: #4f46e5;
+}
+
 .token-toggle-btn {
   background: none;
   border: none;
-  color: #64748b;
+  color: var(--color-text-tertiary);
   cursor: pointer;
   padding: 0.25rem;
   border-radius: 0.25rem;
@@ -621,13 +712,15 @@ onMounted(() => {
 }
 
 .token-toggle-btn:hover {
-  background-color: #e2e8f0;
+  background-color: var(--color-border-secondary);
 }
 
 .token-description {
-  color: #64748b;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
   margin: 0;
+
+  padding: 0 1.5rem 1.5rem;
 }
 
 .messages-list {
@@ -636,7 +729,7 @@ onMounted(() => {
 
 .message-item {
   padding: 1rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-primary);
   border-radius: 0.5rem;
   margin-bottom: 1rem;
 }
@@ -651,17 +744,17 @@ onMounted(() => {
 .message-title {
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .message-time {
   font-size: 0.75rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .message-content {
-  color: #4b5563;
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
   line-height: 1.5;
   margin-bottom: 0.5rem;
@@ -690,17 +783,17 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1.5rem;
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .load-more-btn:disabled {
@@ -708,30 +801,30 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* Responsive Design */
+
 @media (max-width: 768px) {
   .application-header {
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .app-meta {
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .meta-item {
     min-width: auto;
   }
-  
+
   .app-actions {
     justify-content: stretch;
   }
-  
+
   .app-actions button {
     flex: 1;
   }
-  
+
   .section-header {
     flex-direction: column;
     align-items: flex-start;

@@ -94,10 +94,10 @@ const handleLogin = async () => {
 }
 
 .login-card {
-  background: white;
+  background: var(--color-bg-primary);
   padding: 2rem;
   border-radius: 1rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 400px;
 }
@@ -108,14 +108,14 @@ const handleLogin = async () => {
 }
 
 .login-header h1 {
-  color: #1f2937;
+  color: var(--color-text-primary);
   font-size: 2.5rem;
   font-weight: bold;
   margin-bottom: 0.5rem;
 }
 
 .login-header p {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 1rem;
 }
 
@@ -132,44 +132,46 @@ const handleLogin = async () => {
 }
 
 .form-group label {
-  color: #374151;
+  color: var(--color-text-secondary);
   font-weight: 500;
   font-size: 0.875rem;
 }
 
 .form-group input {
   padding: 0.75rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   font-size: 1rem;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .form-group input:disabled {
-  background-color: #f9fafb;
-  color: #6b7280;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
 }
 
 .error-message {
-  color: #ef4444;
+  color: var(--color-error);
   font-size: 0.875rem;
   text-align: center;
   padding: 0.75rem;
-  background-color: #fef2f2;
-  border: 1px solid #fecaca;
+  background-color: var(--color-error-bg);
+  border: 1px solid var(--color-error);
   border-radius: 0.375rem;
 }
 
 .login-btn {
   padding: 0.75rem 1.5rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   font-size: 1rem;
@@ -179,11 +181,11 @@ const handleLogin = async () => {
 }
 
 .login-btn:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .login-btn:disabled {
-  background-color: #9ca3af;
+  background-color: var(--color-text-muted);
   cursor: not-allowed;
 }
 

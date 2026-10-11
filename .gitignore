@@ -82,6 +82,10 @@ dist
 .cache/
 public
 
+# 例外：frontend/public 是 Vite publicDir 源目录（构建时复制进根 public/，
+# 如应用默认图 static/defaultapp.png），必须入仓；根 public/ 构建产物保持忽略
+!frontend/public/
+
 # Vite 构建输出
 dist/
 dist-ssr/
@@ -173,6 +177,23 @@ pnpm-lock.yaml
 
 # claude code
 .claude/
+.qoder/
+.codebuddy/
 
 # 文档和参考
 docs/ui/
+
+# sql 迁移文件
+# src/migrations/sql
+# local git worktrees
+.worktrees/
+
+pack.sh
+
+.mimosa/
+
+references/gotify/
+.zcodeignore
+.zcode/
+# wrangler 本地密钥文件
+.dev.vars

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { messageApi } from '@/services/api'
+import i18n from '@/locales'
 import { wsService } from '@/services/websocket'
 import { browserNotificationService } from '@/services/browserNotification'
 import type { Message, Paging } from '@/types'
@@ -27,7 +28,7 @@ export const useMessagesStore = defineStore('messages', () => {
       paging.value = response.data.paging
       hasMore.value = !!response.data.paging.next
     } catch (err) {
-      error.value = 'Failed to fetch messages'
+      error.value = i18n.global.t('messages.fetchError')
       console.error('Error fetching messages:', err)
     } finally {
       loading.value = false
@@ -47,14 +48,14 @@ export const useMessagesStore = defineStore('messages', () => {
       }
       const response = await messageApi.getMessages(params)
 
-      // Append older messages to the end
+
       const olderMessages = response.data.messages
       messages.value = [...messages.value, ...olderMessages]
 
       paging.value = response.data.paging
       hasMore.value = !!response.data.paging.next
     } catch (err) {
-      error.value = 'Failed to load more messages'
+      error.value = i18n.global.t('messages.loadMoreFailed')
       console.error('Error loading more messages:', err)
     } finally {
       loadingMore.value = false
@@ -66,26 +67,38 @@ export const useMessagesStore = defineStore('messages', () => {
       await messageApi.deleteMessage(id)
       messages.value = messages.value.filter(msg => msg.id !== id)
     } catch (err) {
-      error.value = 'Failed to delete message'
+      error.value = i18n.global.t('messages.deleteFailed')
       console.error('Error deleting message:', err)
     }
   }
 
   const addMessage = (message: Message) => {
-    // Add new message at the beginning
+
     messages.value.unshift(message)
 
-    // Keep only last 100 messages
-    if (messages.value.length > 100) {
-      messages.value = messages.value.slice(0, 100)
-    }
 
-    // Show browser notification for new message
+
+
     browserNotificationService.showMessageNotification(message)
   }
 
+
+
+  wsService.onMessage(addMessage)
+
+
+
+  let wsHasBeenConnected = false
+  wsService.onStateChange((state) => {
+    if (state !== 'connected') return
+    if (wsHasBeenConnected) {
+      void fetchMessages({ limit: 100 })
+    } else {
+      wsHasBeenConnected = true
+    }
+  })
+
   const connectWebSocket = (token: string) => {
-    wsService.onMessage(addMessage)
     wsService.connect(token)
   }
 

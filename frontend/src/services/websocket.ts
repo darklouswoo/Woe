@@ -1,39 +1,149 @@
 import type { Message } from '@/types'
 import { authService } from '@/services/auth'
 
+
+const PING_INTERVAL_MS = 180_000
+
+
+export const RECONNECT_BASE_DELAY_MS = 1_000
+export const RECONNECT_MAX_DELAY_MS = 30_000
+
+export interface WebSocketLocationLike {
+  protocol: string
+  host: string
+}
+
+
+export function buildWebSocketUrl(
+  token: string,
+  location: WebSocketLocationLike,
+  baseUrl: string
+): string {
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const normalizedBase = baseUrl === '/'
+    ? ''
+    : `/${baseUrl.replace(/^\/+|\/+$/g, '')}`
+  const encodedToken = encodeURIComponent(token)
+  return `${scheme}//${location.host}${normalizedBase}/stream?token=${encodedToken}`
+}
+
+
+
+
+
+export function computeReconnectDelayMs(
+  attempt: number,
+  baseDelay: number = RECONNECT_BASE_DELAY_MS,
+  maxDelay: number = RECONNECT_MAX_DELAY_MS
+): number {
+  return Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay)
+}
+
+export type WsConnectionState = 'disconnected' | 'connecting' | 'connected'
+
 export class WebSocketService {
   private ws: WebSocket | null = null
+
+  private token: string | null = null
   private reconnectAttempts = 0
   private maxReconnectAttempts = 5
-  private reconnectDelay = 1000
-  private messageHandlers: ((message: Message) => void)[] = []
-  private connectionState: 'disconnected' | 'connecting' | 'connected' = 'disconnected'
-  private lastConnected: string | null = null
-  private stateChangeHandlers: ((state: 'disconnected' | 'connecting' | 'connected') => void)[] = []
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-  private setConnectionState(state: 'disconnected' | 'connecting' | 'connected') {
+  private isManualClose = false
+  private pingInterval: ReturnType<typeof setInterval> | null = null
+  private messageHandlers: ((message: Message) => void)[] = []
+  private connectionState: WsConnectionState = 'disconnected'
+  private lastConnected: string | null = null
+  private stateChangeHandlers: ((state: WsConnectionState) => void)[] = []
+
+  constructor() {
+
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          this.reconnect()
+        }
+      })
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        this.reconnect()
+      })
+    }
+  }
+
+  private setConnectionState(state: WsConnectionState) {
     this.connectionState = state
     this.stateChangeHandlers.forEach(handler => handler(state))
   }
 
+
+  private startPing() {
+    this.stopPing()
+    this.pingInterval = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send('ping')
+        } catch {
+
+        }
+      }
+    }, PING_INTERVAL_MS)
+  }
+
+
+  private stopPing() {
+    if (this.pingInterval !== null) {
+      clearInterval(this.pingInterval)
+      this.pingInterval = null
+    }
+  }
+
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+  }
+
   connect(token: string) {
-    // 根据API规范，WebSocket端点支持多种认证方式，但浏览器WebSocket API限制只能使用查询参数
-    // 支持的认证方式：clientTokenQuery（当前实现）、clientTokenAuthorizationHeader（不支持）、
-    // clientTokenHeader（不支持）、basicAuth（不支持）
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/stream?token=${encodeURIComponent(token)}`
+
+
+
+    this.token = token
+    this.isManualClose = false
+    this.clearReconnectTimer()
+    this.stopPing()
+
+
+    if (this.ws) {
+      this.ws.onopen = this.ws.onmessage = this.ws.onclose = this.ws.onerror = null
+      try {
+        this.ws.close()
+      } catch {
+
+      }
+      this.ws = null
+    }
+
+    const wsUrl = buildWebSocketUrl(token, window.location, import.meta.env.BASE_URL)
 
     try {
       this.setConnectionState('connecting')
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected')
         this.reconnectAttempts = 0
         this.lastConnected = new Date().toISOString()
         this.setConnectionState('connected')
+        this.startPing()
       }
 
       this.ws.onmessage = (event) => {
+
+        if (event.data === 'pong') return
         try {
           const message: Message = JSON.parse(event.data)
           this.messageHandlers.forEach(handler => handler(message))
@@ -43,19 +153,21 @@ export class WebSocketService {
       }
 
       this.ws.onclose = () => {
-        console.log('WebSocket disconnected')
+        this.stopPing()
         this.setConnectionState('disconnected')
-        this.attemptReconnect(token)
+        if (!this.isManualClose) {
+          this.scheduleReconnect()
+        }
       }
 
-      this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
+      this.ws.onerror = () => {
+        this.stopPing()
         this.setConnectionState('disconnected')
       }
     } catch (error) {
       console.error('Failed to connect WebSocket:', error)
       this.setConnectionState('disconnected')
-      this.attemptReconnect(token)
+      this.scheduleReconnect()
     }
   }
 
@@ -66,24 +178,47 @@ export class WebSocketService {
     return true
   }
 
-  private attemptReconnect(token: string) {
+
+
+
+
+
+  reconnect() {
+    if (!this.token || this.isManualClose || this.connectionState === 'connected') {
+      return
+    }
+    this.reconnectAttempts = 0
+    this.clearReconnectTimer()
+    this.connect(this.token)
+  }
+
+  private scheduleReconnect() {
+    if (this.isManualClose) return
+
+    if (this.reconnectTimer !== null) return
+
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++
-      console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`)
-
-      setTimeout(() => {
-        this.connect(token)
-      }, this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1))
-    } else {
-      console.error('Max reconnection attempts reached')
+      const delay = computeReconnectDelayMs(this.reconnectAttempts)
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null
+        if (this.token) {
+          this.connect(this.token)
+        }
+      }, delay)
     }
+
   }
 
   disconnect() {
+    this.isManualClose = true
+    this.clearReconnectTimer()
+    this.stopPing()
     if (this.ws) {
       this.ws.close()
       this.ws = null
     }
+    this.token = null
     this.messageHandlers = []
   }
 
@@ -98,13 +233,13 @@ export class WebSocketService {
     }
   }
 
-  onStateChange(handler: (state: 'disconnected' | 'connecting' | 'connected') => void) {
+  onStateChange(handler: (state: WsConnectionState) => void) {
     this.stateChangeHandlers.push(handler)
-    // 立即触发一次当前状态
+
     handler(this.connectionState)
   }
 
-  offStateChange(handler: (state: 'disconnected' | 'connecting' | 'connected') => void) {
+  offStateChange(handler: (state: WsConnectionState) => void) {
     const index = this.stateChangeHandlers.indexOf(handler)
     if (index > -1) {
       this.stateChangeHandlers.splice(index, 1)
@@ -115,7 +250,7 @@ export class WebSocketService {
     return this.connectionState === 'connected'
   }
 
-  getConnectionState(): 'disconnected' | 'connecting' | 'connected' {
+  getConnectionState(): WsConnectionState {
     return this.connectionState
   }
 

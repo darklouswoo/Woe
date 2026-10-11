@@ -1,6 +1,12 @@
+
+
+
+
+
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { applications } from './application';
+
 
 export const messages = sqliteTable('messages', {
   id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),

@@ -8,7 +8,7 @@
       <div class="modal-body">
         <div class="form-group">
           <label for="plugin-type">{{ $t('plugins.type') }}</label>
-          <select id="plugin-type" v-model="selectedType">
+          <select id="plugin-type" v-model="selectedType" :disabled="loadingTypes">
             <option v-for="type in availableTypes" :key="type.value" :value="type.value">
               {{ type.label }}
             </option>
@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from './LoadingSpinner.vue'
 import { pluginApi } from '@/services/api'
@@ -55,15 +55,36 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-// Available plugin types (可扩展)
-const availableTypes = [
-  { value: 'builtin/webhooker', label: 'Webhooker' },
-  { value: 'builtin/displayer', label: 'Displayer' }
-]
 
-const selectedType = ref('builtin/webhooker')
+const availableTypes = ref<{ value: string; label: string }[]>([])
+const loadingTypes = ref(false)
+const selectedType = ref('')
 const name = ref('')
 const creating = ref(false)
+
+
+const loadAvailableTypes = async () => {
+  loadingTypes.value = true
+  try {
+    const res = await pluginApi.getAvailablePlugins()
+    availableTypes.value = res.data.map(p => ({
+      value: p.modulePath,
+      label: p.name
+    }))
+
+    if (availableTypes.value.length > 0 && !selectedType.value) {
+      selectedType.value = availableTypes.value[0].value
+    }
+  } catch (err) {
+    console.error('Failed to load available plugins:', err)
+  } finally {
+    loadingTypes.value = false
+  }
+}
+
+onMounted(() => {
+  loadAvailableTypes()
+})
 
 const close = () => {
   name.value = ''
@@ -94,7 +115,7 @@ const submit = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -102,11 +123,11 @@ const submit = async () => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
   width: 90%;
   max-width: 500px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg);
 }
 
 .modal-header {
@@ -114,13 +135,14 @@ const submit = async () => {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .close-btn {
@@ -128,14 +150,15 @@ const submit = async () => {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 0;
   width: 2rem;
   height: 2rem;
+  transition: var(--theme-transition);
 }
 
 .close-btn:hover {
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .modal-body {
@@ -152,22 +175,25 @@ const submit = async () => {
 .form-group label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-secondary);
 }
 
 .form-group input,
 .form-group select {
   padding: 0.625rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   font-size: 0.875rem;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: var(--theme-transition);
 }
 
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .modal-footer {
@@ -175,20 +201,22 @@ const submit = async () => {
   justify-content: flex-end;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .cancel-btn {
   padding: 0.5rem 1rem;
-  background: #f3f4f6;
+  background: var(--color-bg-hover);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: var(--theme-transition);
 }
 
 .cancel-btn:hover {
-  background: #e5e7eb;
+  background: var(--color-bg-active);
 }
 
 .submit-btn {
@@ -196,16 +224,17 @@ const submit = async () => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: #3b82f6;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-weight: 500;
+  transition: var(--theme-transition);
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--color-primary-hover);
 }
 
 .submit-btn:disabled {

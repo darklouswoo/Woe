@@ -149,7 +149,7 @@ const togglePlugin = async (plugin: Plugin) => {
       showSuccess(t('plugins.enabledSuccess', { name: plugin.name }))
     }
 
-    // Reload plugins to update status
+
     await loadPlugins()
   } catch (err: any) {
     showError(err, t('plugins.toggleError', { action: plugin.enabled ? t('plugins.disable') : t('plugins.enable') }))
@@ -179,7 +179,7 @@ onMounted(() => {
 .page-title {
   font-size: 2rem;
   font-weight: bold;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
@@ -190,26 +190,26 @@ onMounted(() => {
 
 .refresh-btn {
   padding: 0.5rem 1rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .refresh-btn:disabled {
-  background-color: #9ca3af;
+  background-color: var(--color-text-muted);
   cursor: not-allowed;
 }
 
 .error-message {
   background-color: #fef2f2;
-  color: #dc2626;
+  color: var(--color-error-hover);
   padding: 1rem;
   border-radius: 0.375rem;
   margin-bottom: 1rem;
@@ -229,17 +229,17 @@ onMounted(() => {
 .learn-more-btn {
   display: inline-block;
   padding: 0.5rem 1rem;
-  background-color: #3b82f6;
-  color: white !important;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse) !important;
   text-decoration: none;
   border-radius: 0.375rem;
   font-weight: 500;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .learn-more-btn:hover {
-  background-color: #2563eb;
-  color: white !important;
+  background-color: var(--color-primary-hover);
+  color: var(--color-text-inverse) !important;
 }
 
 .plugins-grid {
@@ -249,9 +249,9 @@ onMounted(() => {
 }
 
 .plugin-card {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -274,7 +274,7 @@ onMounted(() => {
 .plugin-name {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
@@ -284,22 +284,22 @@ onMounted(() => {
   gap: 0.5rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .status-enabled {
-  color: #059669;
+  color: var(--color-success-hover);
 }
 
 .status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #d1d5db;
+  background-color: var(--color-border-secondary);
 }
 
 .status-enabled .status-indicator {
-  background-color: #10b981;
+  background-color: var(--color-success);
 }
 
 .plugin-info {
@@ -324,27 +324,27 @@ onMounted(() => {
 
 .meta-label {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-weight: 500;
   min-width: 60px;
 }
 
 .meta-value {
   font-size: 0.875rem;
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .meta-link {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  color: #3b82f6;
+  color: var(--color-primary);
   text-decoration: none;
   font-size: 0.875rem;
 }
 
 .meta-link:hover {
-  color: #2563eb;
+  color: var(--color-primary-hover);
 }
 
 .plugin-capabilities {
@@ -354,7 +354,7 @@ onMounted(() => {
 .capabilities-title {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text-secondary);
   margin: 0 0 0.5rem 0;
 }
 
@@ -365,8 +365,8 @@ onMounted(() => {
 }
 
 .capability-tag {
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
@@ -377,24 +377,24 @@ onMounted(() => {
   display: flex;
   padding: 1rem 1.5rem;
   gap: 0.75rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .details-btn {
   flex: 1;
   padding: 0.5rem 1rem;
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
   text-decoration: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-weight: 500;
   text-align: center;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .details-btn:hover {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .toggle-btn {
@@ -408,26 +408,26 @@ onMounted(() => {
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
   min-width: 100px;
 }
 
 .enable-btn {
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
 }
 
 .enable-btn:hover:not(:disabled) {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .disable-btn {
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
 }
 
 .disable-btn:hover:not(:disabled) {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .toggle-btn:disabled {
@@ -435,7 +435,7 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* Responsive Design */
+
 @media (max-width: 768px) {
   .page-header {
     flex-direction: column;

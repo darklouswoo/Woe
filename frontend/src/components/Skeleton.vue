@@ -1,26 +1,26 @@
 <template>
   <div class="skeleton" :class="{ [`skeleton-${type}`]: true, [`skeleton-${size}`]: true }">
-    <!-- Text Skeleton -->
+
     <template v-if="type === 'text'">
       <div class="skeleton-line" :style="{ width: width || '100%' }"></div>
     </template>
-    
-    <!-- Title Skeleton -->
+
+
     <template v-else-if="type === 'title'">
       <div class="skeleton-line skeleton-title" :style="{ width: width || '70%' }"></div>
     </template>
-    
-    <!-- Avatar Skeleton -->
+
+
     <template v-else-if="type === 'avatar'">
       <div class="skeleton-avatar" :style="{ width: size, height: size }"></div>
     </template>
-    
-    <!-- Button Skeleton -->
+
+
     <template v-else-if="type === 'button'">
       <div class="skeleton-button" :style="{ width: width || '120px', height: size }"></div>
     </template>
-    
-    <!-- Card Skeleton -->
+
+
     <template v-else-if="type === 'card'">
       <div class="skeleton-card">
         <div class="skeleton-card-header">
@@ -37,8 +37,8 @@
         </div>
       </div>
     </template>
-    
-    <!-- List Skeleton -->
+
+
     <template v-else-if="type === 'list'">
       <div class="skeleton-list">
         <div v-for="i in rows" :key="i" class="skeleton-list-item">
@@ -50,8 +50,8 @@
         </div>
       </div>
     </template>
-    
-    <!-- Table Skeleton -->
+
+
     <template v-else-if="type === 'table'">
       <div class="skeleton-table">
         <div class="skeleton-table-header">
@@ -96,7 +96,7 @@ withDefaults(defineProps<Props>(), {
 .skeleton-table-row {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, var(--color-bg-hover) 25%, var(--color-bg-active) 50%, var(--color-bg-hover) 75%);
   background-size: 200% 100%;
   animation: loading 1.5s infinite;
 }
@@ -180,7 +180,7 @@ withDefaults(defineProps<Props>(), {
   display: flex;
   gap: 1rem;
   padding: 0.75rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
   margin-bottom: 0.5rem;
 }
 

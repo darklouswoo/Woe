@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `push_outbox_client_message_unique` ON `push_outbox` (`client_id`,`message_id`) WHERE client_id IS NOT NULL;

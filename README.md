@@ -1,106 +1,32 @@
 # Woe
 
-Woe 是一个基于 Cloudflare Workers 的 Gotify 服务端实现，提供简单、可靠的通知推送服务。
+Gotify 兼容的自托管通知服务，运行在 Cloudflare Workers 上。Woe 提供 REST API、WebSocket 消息流和用于服务管理的 Web UI，支持消息、应用、客户端、用户与插件管理。
 
-## What's New
+## 功能
 
-- 🔔 **浏览器通知支持** - 支持在浏览器中接收桌面通知
-- 🗄️ **Drizzle ORM 集成** - 更好的数据库管理和迁移支持
-- ✉️ **前端发送通知** - Web UI 支持直接发送测试通知
-- 🔒 **安全性改进** - 修复用户状态字段问题
+- **消息 API**：兼容 Gotify 的 `POST /message`，支持 JSON、form、multipart、query 绑定以及 extras 字段。
+- **实时消息流**：通过 `/stream` 和 client token 订阅消息，支持 `ping`/`pong` 保活。
+- **Web UI**：登录、消息浏览与 Markdown 渲染、应用/客户端/用户管理、插件配置。
+- **多用户与媒体**：管理员提权、注册开关、凭据轮换与过期；图标存储在 Cloudflare R2 并支持默认图兜底。
 
-## 特性
+## 认证与消息契约
 
-- 🚀 基于 Cloudflare Workers，全球部署，自动扩展
-- 📱 Gotify v2.0.2 兼容，支持现有客户端
-- 🔐 灵活的认证机制，支持多种令牌类型
-- 📨 实时消息推送，WebSocket 支持
-- 🔌 插件系统，支持功能扩展
-- 🖼️ 图片存储支持（Cloudflare R2）
-- 🌐 现代化 Web UI - 基于 Vue 3，支持中英文
+- Basic Authentication 用于用户操作、管理员提权和初始化。
+- Application Token（`X-Gotify-Key`）用于 `POST /message`；Client Token 用于 Web/客户端会话和 `/stream`；Bearer 与 `X-Gotify-Key` 等价。
+- 新签发的 app/client token 使用 `gtfy…` EdDSA 格式，历史 `A…`/`C…` 格式仍有效；完整 token 只在创建或轮换响应中返回。
+- `priority` 接受 **0..3** 的整数，超出范围的显式值返回 400。
 
-## 快速开始
+## 公开插件边界
 
-### 前置要求
+公开版只包含 **displayer** 展示插件：它把消息渲染为独立展示页（`GET /display/{id}`），不执行 Webhook 或移动推送。
 
-- Cloudflare 账户
-- Node.js 18+
-- Wrangler CLI
+移动推送和 Webhook 传输插件不包含在公开仓库中；核心推送管线和插件 API 仍保留为扩展点。未安装传输插件时，新消息不会触发移动推送或 Webhook 调用。
 
-### 部署
+## 文档入口
 
-```bash
-# 1. 克隆仓库
-git clone https://github.com/qzcrown/woe.git && cd woe
+- [中文部署指南](DEPLOY.md)：资源创建、配置、Secrets、构建、部署、初始化、升级和故障排查。
+- [English deployment guide](DEPLOY.en.md)
 
-# 2. 安装依赖
-npm install && npm run setup:frontend
+## License
 
-# 3. 登录 Cloudflare 并创建资源
-wrangler login
-wrangler d1 create woe-db      # 记录输出的 database_id
-wrangler r2 bucket create woe-storage
-
-# 4. 配置
-cp example.wrangler.toml wrangler.toml
-# 编辑 wrangler.toml，替换 database_id 为实际值
-
-# 5. 构建并部署
-npm run build:frontend
-npm run deploy
-```
-
-详细配置请参考 [example.wrangler.toml](example.wrangler.toml)。
-
-## 基本使用
-
-### Web UI
-
-部署完成后访问 Worker 域名，使用默认凭据登录：
-
-- 用户名：`admin`
-- 密码：`password`
-- 登录后请立即修改默认密码
-
-### API
-
-```bash
-# 创建应用
-curl -X POST https://your-domain.workers.dev/application \
-  -H "Content-Type: application/json" \
-  -H "X-Gotify-Key: your-client-token" \
-  -d '{"name": "My App", "description": "测试应用"}'
-
-# 发送消息
-curl -X POST https://your-domain.workers.dev/message \
-  -H "Content-Type: application/json" \
-  -H "X-Gotify-Key: your-app-token" \
-  -d '{"title": "Hello", "message": "World", "priority": 5}'
-```
-
-## 客户端支持
-
-Woe 兼容所有 Gotify 客户端：
-
-- [Gotify Android](https://github.com/gotify/android)
-- [Gotify iOS](https://github.com/gotify/ios)
-- [Gotify CLI](https://github.com/gotify/cli)
-- [更多客户端](https://gotify.net/docs/libraries)
-
-## 技术栈
-
-| 后端 | 前端 | 基础设施 |
-|------|------|----------|
-| Cloudflare Workers | Vue 3 | Cloudflare D1 |
-| Hono | TypeScript | Cloudflare R2 |
-| Drizzle ORM | Pinia | WebSocket |
-
-## 许可证
-
-[GPLv3 License](LICENSE)
-
-## 相关链接
-
-- [Gotify 官网](https://gotify.net/)
-- [Cloudflare Workers](https://workers.cloudflare.com/)
-- [项目 GitHub](https://github.com/qzcrown/woe)
+[GPL-3.0-only](LICENSE)

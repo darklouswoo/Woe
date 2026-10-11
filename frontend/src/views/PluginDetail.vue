@@ -2,14 +2,14 @@
   <Layout>
     <div class="plugin-detail">
       <div v-if="loading" class="loading-container">
-        <LoadingSpinner text="Loading plugin details..." />
+        <LoadingSpinner :text="$t('pluginDetail.loadingDetails')" />
       </div>
 
       <div v-else-if="error" class="error-container">
         <div class="error-message">
-          <h3>Error loading plugin</h3>
+          <h3>{{ $t('plugins.loadError') }}</h3>
           <p>{{ error }}</p>
-          <button @click="loadPlugin" class="retry-btn">Retry</button>
+          <button @click="loadPlugin" class="retry-btn">{{ $t('pluginDetail.retry') }}</button>
         </div>
       </div>
 
@@ -52,22 +52,22 @@
             </div>
             <div class="plugin-status" :class="{ 'status-enabled': plugin.enabled }">
               <span class="status-indicator"></span>
-              {{ plugin.enabled ? 'Enabled' : 'Disabled' }}
+              {{ plugin.enabled ? $t('common.enabled') : $t('common.disabled') }}
             </div>
-            
+
             <div class="plugin-meta">
               <div v-if="plugin.author" class="meta-item">
-                <span class="meta-label">Author:</span>
+                <span class="meta-label">{{ $t('plugins.author') }}:</span>
                 <span class="meta-value">{{ plugin.author }}</span>
               </div>
-              
+
               <div v-if="plugin.license" class="meta-item">
-                <span class="meta-label">License:</span>
+                <span class="meta-label">{{ $t('plugins.license') }}:</span>
                 <span class="meta-value">{{ plugin.license }}</span>
               </div>
-              
+
               <div v-if="plugin.website" class="meta-item">
-                <span class="meta-label">Website:</span>
+                <span class="meta-label">{{ $t('plugins.website') }}:</span>
                 <a :href="plugin.website" target="_blank" class="meta-link">
                   {{ plugin.website }}
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -76,30 +76,30 @@
                   </svg>
                 </a>
               </div>
-              
+
               <div class="meta-item">
-                <span class="meta-label">Module Path:</span>
+                <span class="meta-label">{{ $t('pluginDetail.modulePath') }}:</span>
                 <span class="meta-value">{{ plugin.modulePath }}</span>
               </div>
             </div>
-            
+
             <div class="plugin-actions">
-              <button 
-                @click="togglePlugin" 
+              <button
+                @click="togglePlugin"
                 :class="['toggle-btn', plugin.enabled ? 'disable-btn' : 'enable-btn']"
                 :disabled="togglingPlugin"
               >
                 <LoadingSpinner v-if="togglingPlugin" size="small" variant="dots" />
-                <span v-else>{{ plugin.enabled ? 'Disable' : 'Enable' }}</span>
+                <span v-else>{{ plugin.enabled ? $t('common.disable') : $t('common.enable') }}</span>
               </button>
             </div>
           </div>
         </div>
 
         <div class="plugin-sections">
-          <!-- Capabilities Section -->
+
           <div v-if="plugin.capabilities && plugin.capabilities.length" class="section">
-            <h2 class="section-title">Capabilities</h2>
+            <h2 class="section-title">{{ $t('plugins.capabilities') }}</h2>
             <div class="capabilities-list">
               <span v-for="capability in plugin.capabilities" :key="capability" class="capability-tag">
                 {{ capability }}
@@ -107,33 +107,33 @@
             </div>
           </div>
 
-          <!-- Configuration Section -->
+
           <div class="section">
             <div class="section-header">
-              <h2 class="section-title">Configuration</h2>
+              <h2 class="section-title">{{ $t('pluginDetail.configuration') }}</h2>
               <div class="config-actions">
-                <button 
-                  @click="editMode = !editMode" 
+                <button
+                  @click="editMode = !editMode"
                   :class="['config-mode-btn', editMode ? 'cancel-btn' : 'edit-btn']"
                 >
-                  {{ editMode ? 'Cancel' : 'Edit' }}
+                  {{ editMode ? $t('common.cancel') : $t('common.edit') }}
                 </button>
-                <button 
-                  v-if="editMode" 
-                  @click="saveConfig" 
+                <button
+                  v-if="editMode"
+                  @click="saveConfig"
                   :disabled="savingConfig"
                   class="save-btn"
                 >
                   <LoadingSpinner v-if="savingConfig" size="small" variant="dots" />
-                  <span v-else>Save</span>
+                  <span v-else>{{ $t('common.save') }}</span>
                 </button>
               </div>
             </div>
-            
+
             <div v-if="!editMode && config" class="config-display">
               <pre class="config-content">{{ config }}</pre>
             </div>
-            
+
             <div v-else-if="editMode" class="config-editor">
               <textarea
                 v-model="configText"
@@ -142,66 +142,66 @@
                 spellcheck="false"
               ></textarea>
             </div>
-            
+
             <div v-if="!editMode && !config" class="no-config">
-              <p>This plugin does not have any configuration.</p>
+              <p>{{ $t('pluginDetail.noConfig') }}</p>
             </div>
           </div>
 
-          <!-- Display Section -->
+
           <div v-if="hasDisplay" class="section">
             <div class="section-header">
-              <h2 class="section-title">Plugin Display</h2>
-              <button 
-                @click="refreshDisplay" 
+              <h2 class="section-title">{{ $t('pluginDetail.pluginDisplay') }}</h2>
+              <button
+                @click="refreshDisplay"
                 :disabled="loadingDisplay"
                 class="refresh-btn"
               >
                 <LoadingSpinner v-if="loadingDisplay" size="small" variant="dots" />
-                <span v-else>Refresh</span>
+                <span v-else>{{ $t('common.refresh') }}</span>
               </button>
             </div>
-            
+
             <div v-if="loadingDisplay" class="loading-container">
-              <LoadingSpinner text="Loading plugin display..." />
+              <LoadingSpinner :text="$t('pluginDetail.loadingDisplay')" />
             </div>
-            
+
             <div v-else-if="displayContent" class="display-content">
               <div v-html="displayContent"></div>
             </div>
-            
+
             <div v-else class="no-display">
-              <p>This plugin does not provide any display content.</p>
+              <p>{{ $t('pluginDetail.noDisplay') }}</p>
             </div>
           </div>
           <div class="section">
             <div class="section-header">
-              <h2 class="section-title">Execution Logs</h2>
+              <h2 class="section-title">{{ $t('pluginDetail.executionLogs') }}</h2>
               <button class="refresh-btn" @click="loadLogs" :disabled="loadingLogs">
                 <LoadingSpinner v-if="loadingLogs" size="small" variant="dots" />
-                <span v-else>Refresh</span>
+                <span v-else>{{ $t('common.refresh') }}</span>
               </button>
             </div>
             <div v-if="loadingLogs" class="loading-container">
-              <LoadingSpinner text="Loading logs..." />
+              <LoadingSpinner :text="$t('pluginDetail.loadingLogs')" />
             </div>
             <div v-else class="logs-list">
               <div v-if="logs.length === 0" class="no-display">
-                <p>No logs.</p>
+                <p>{{ $t('pluginDetail.noLogs') }}</p>
               </div>
               <ul v-else>
                 <li class="log-header">
-                  <span class="log-time">Time</span>
-                  <span class="log-event">Event</span>
-                  <span class="log-status">Status</span>
-                  <span class="log-duration">Duration</span>
-                  <span class="log-error">Error</span>
+                  <span class="log-time">{{ $t('pluginDetail.logTime') }}</span>
+                  <span class="log-event">{{ $t('pluginDetail.logEvent') }}</span>
+                  <span class="log-status">{{ $t('pluginDetail.logStatus') }}</span>
+                  <span class="log-duration">{{ $t('pluginDetail.logDuration') }}</span>
+                  <span class="log-error">{{ $t('pluginDetail.logError') }}</span>
                 </li>
                 <li v-for="item in logs" :key="item.id" class="log-item">
                   <span class="log-time">{{ item.createdAt }}</span>
                   <span class="log-event">{{ item.event }}</span>
                   <span class="log-status" :class="{'ok': item.status == 1 || item.status == 'ok', 'error': item.status == 0 || item.status == 'error'}">
-                    {{ item.status == 1 || item.status == 'ok' ? 'Success' : 'Failure' }}
+                    {{ item.status == 1 || item.status == 'ok' ? $t('common.success') : $t('pluginDetail.failure') }}
                   </span>
                   <span class="log-duration">{{ item.durationMs }} ms</span>
                   <span v-if="item.error" class="log-error">{{ item.error }}</span>
@@ -241,13 +241,13 @@ const displayContent = ref<string>('')
 const loadingDisplay = ref(false)
 const logs = ref<any[]>([])
 
-// Name editing state
+
 const editingName = ref(false)
 const editedName = ref('')
 const savingName = ref(false)
 const nameInput = ref<HTMLInputElement>()
 
-// Icon upload state
+
 const uploadingIcon = ref(false)
 const loadingLogs = ref(false)
 
@@ -266,33 +266,33 @@ const configExample = computed(() => {
 const loadPlugin = async () => {
   loading.value = true
   error.value = null
-  
+
   try {
     const response = await pluginApi.getPlugins()
     const plugins = response.data || []
     plugin.value = plugins.find(p => p.id === pluginId.value) || null
-    
+
     if (plugin.value) {
-      // Load configuration
+
       try {
         const configResponse = await pluginApi.getConfig(pluginId.value)
         config.value = configResponse.data
         configText.value = configResponse.data
       } catch (err) {
-        // Plugin might not have configuration
+
         console.warn('Failed to load plugin configuration:', err)
       }
-      
-      // Load display content if available
+
+
       if (hasDisplay.value) {
         await loadDisplay()
       }
     } else {
-      error.value = 'Plugin not found'
+      error.value = t('pluginDetail.notFound')
     }
   } catch (err: any) {
-    error.value = err.errorDescription || 'Failed to load plugin'
-    showError(err, 'Failed to load plugin')
+    error.value = err.errorDescription || t('plugins.loadError')
+    showError(err, t('plugins.loadError'))
   } finally {
     loading.value = false
   }
@@ -300,9 +300,9 @@ const loadPlugin = async () => {
 
 const loadDisplay = async () => {
   if (!plugin.value) return
-  
+
   loadingDisplay.value = true
-  
+
   try {
     const response = await pluginApi.getDisplay(pluginId.value)
     displayContent.value = response.data
@@ -332,22 +332,22 @@ const loadLogs = async () => {
 
 const togglePlugin = async () => {
   if (!plugin.value) return
-  
+
   togglingPlugin.value = true
-  
+
   try {
     if (plugin.value.enabled) {
       await pluginApi.disable(pluginId.value)
-      showSuccess(`Plugin "${plugin.value.name}" disabled successfully`)
+      showSuccess(t('plugins.disabledSuccess', { name: plugin.value.name }))
     } else {
       await pluginApi.enable(pluginId.value)
-      showSuccess(`Plugin "${plugin.value.name}" enabled successfully`)
+      showSuccess(t('plugins.enabledSuccess', { name: plugin.value.name }))
     }
-    
-    // Reload plugin to update status
+
+
     await loadPlugin()
   } catch (err: any) {
-    showError(err, `Failed to ${plugin.value.enabled ? 'disable' : 'enable'} plugin`)
+    showError(err, t('plugins.toggleError', { action: plugin.value.enabled ? t('common.disable') : t('common.enable') }))
   } finally {
     togglingPlugin.value = false
   }
@@ -362,15 +362,15 @@ const saveConfig = async () => {
     await pluginApi.updateConfig(pluginId.value, configText.value)
     config.value = configText.value
     editMode.value = false
-    showSuccess('Configuration saved successfully')
+    showSuccess(t('pluginDetail.configSaved'))
   } catch (err: any) {
-    showError(err, 'Failed to save configuration')
+    showError(err, t('pluginDetail.configSaveFailed'))
   } finally {
     savingConfig.value = false
   }
 }
 
-// Name editing methods
+
 const startEditingName = () => {
   if (plugin.value) {
     editedName.value = plugin.value.name
@@ -389,7 +389,7 @@ const saveName = async () => {
     await pluginApi.updateName(pluginId.value, editedName.value)
     editingName.value = false
     showSuccess(t('plugins.nameUpdated'))
-    // Reload plugin data to get updated name
+
     await loadPlugin()
   } catch (err: any) {
     showError(err, t('plugins.nameUpdateError'))
@@ -403,7 +403,7 @@ const cancelEditName = () => {
   editedName.value = ''
 }
 
-// Icon upload methods
+
 const uploadIcon = async (file: File) => {
   if (!plugin.value) return
 
@@ -411,7 +411,7 @@ const uploadIcon = async (file: File) => {
   try {
     await pluginApi.uploadImage(pluginId.value, file)
     showSuccess(t('plugins.iconUploaded'))
-    // Reload plugin data to get updated icon
+
     await loadPlugin()
   } catch (err: any) {
     showError(err, t('plugins.iconUploadError'))
@@ -426,14 +426,14 @@ const deleteIcon = async () => {
   try {
     await pluginApi.deleteImage(pluginId.value)
     showSuccess(t('plugins.iconDeleted'))
-    // Reload plugin data to get updated icon
+
     await loadPlugin()
   } catch (err: any) {
     showError(err, t('plugins.iconDeleteError'))
   }
 }
 
-// Watch for edit mode changes to reset config text if cancelled
+
 watch(editMode, (newMode) => {
   if (!newMode) {
     configText.value = config.value
@@ -483,8 +483,8 @@ onMounted(() => {
 }
 
 .retry-btn {
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   padding: 0.5rem 1rem;
@@ -501,9 +501,9 @@ onMounted(() => {
   display: flex;
   gap: 2rem;
   padding: 1.5rem;
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 .plugin-icon-large {
@@ -526,7 +526,7 @@ onMounted(() => {
 .plugin-name {
   font-size: 1.875rem;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
@@ -538,17 +538,17 @@ onMounted(() => {
   height: 32px;
   padding: 0;
   background: transparent;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
-  color: #6b7280;
-  transition: all 0.2s;
+  color: var(--color-text-tertiary);
+  transition: var(--theme-transition);
 }
 
 .edit-name-btn:hover {
-  background: #f3f4f6;
-  color: #3b82f6;
-  border-color: #3b82f6;
+  background: var(--color-bg-hover);
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .plugin-name-edit {
@@ -559,18 +559,19 @@ onMounted(() => {
 
 .name-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   font-size: 1.5rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   min-width: 200px;
+  background-color: var(--color-bg-primary);
 }
 
 .name-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .save-btn,
@@ -581,19 +582,19 @@ onMounted(() => {
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
 }
 
 .save-btn {
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
 .save-btn:hover:not(:disabled) {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .save-btn:disabled {
@@ -602,12 +603,12 @@ onMounted(() => {
 }
 
 .cancel-btn {
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
 }
 
 .cancel-btn:hover {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .plugin-status {
@@ -616,22 +617,22 @@ onMounted(() => {
   gap: 0.5rem;
   font-size: 1rem;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .status-enabled {
-  color: #059669;
+  color: var(--color-success-hover);
 }
 
 .status-indicator {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background-color: #d1d5db;
+  background-color: var(--color-border-secondary);
 }
 
 .status-enabled .status-indicator {
-  background-color: #10b981;
+  background-color: var(--color-success);
 }
 
 .plugin-meta {
@@ -649,13 +650,13 @@ onMounted(() => {
 
 .meta-label {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-weight: 500;
 }
 
 .meta-value {
   font-size: 0.875rem;
-  color: #1f2937;
+  color: var(--color-text-primary);
   font-weight: 600;
 }
 
@@ -663,13 +664,13 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  color: #3b82f6;
+  color: var(--color-primary);
   text-decoration: none;
   font-size: 0.875rem;
 }
 
 .meta-link:hover {
-  color: #2563eb;
+  color: var(--color-primary-hover);
 }
 
 .plugin-actions {
@@ -688,26 +689,26 @@ onMounted(() => {
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
   min-width: 120px;
 }
 
 .enable-btn {
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
 }
 
 .enable-btn:hover:not(:disabled) {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .disable-btn {
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
 }
 
 .disable-btn:hover:not(:disabled) {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .toggle-btn:disabled {
@@ -731,10 +732,10 @@ onMounted(() => {
   grid-template-columns: 180px 160px 100px 100px 1fr;
   gap: 8px;
   padding: 8px 16px;
-  background-color: #f9fafb;
+  background-color: var(--color-bg-tertiary);
   font-weight: 600;
-  color: #374151;
-  border-bottom: 2px solid #e5e7eb;
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid var(--color-border-primary);
   border-top: none;
 }
 
@@ -743,16 +744,16 @@ onMounted(() => {
   grid-template-columns: 180px 160px 100px 100px 1fr;
   gap: 8px;
   padding: 8px 16px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-primary);
 }
 
-.log-status.ok { color: #10b981; }
-.log-status.error { color: #ef4444; }
+.log-status.ok { color: var(--color-success); }
+.log-status.error { color: var(--color-error); }
 
 .section {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -766,11 +767,17 @@ onMounted(() => {
 .section-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
   padding: 0 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+
+
+.section > .section-title {
+  padding-top: 1.5rem;
 }
 
 .config-actions {
@@ -785,44 +792,44 @@ onMounted(() => {
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
 }
 
 .edit-btn {
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 .edit-btn:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
-.cancel-btn {
-  background-color: #6b7280;
-  color: white;
+.config-actions .cancel-btn {
+  background-color: var(--color-text-tertiary);
+  color: var(--color-text-inverse);
 }
 
-.cancel-btn:hover {
-  background-color: #4b5563;
+.config-actions .cancel-btn:hover {
+  background-color: var(--color-text-secondary);
 }
 
-.save-btn {
+.config-actions .save-btn {
   padding: 0.375rem 0.75rem;
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
 }
 
-.save-btn:hover:not(:disabled) {
-  background-color: #059669;
+.config-actions .save-btn:hover:not(:disabled) {
+  background-color: var(--color-success-hover);
 }
 
-.save-btn:disabled {
+.config-actions .save-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -832,13 +839,13 @@ onMounted(() => {
 }
 
 .config-content {
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background-color: var(--color-bg-hover);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.5rem;
   padding: 1rem;
   font-family: 'Courier New', monospace;
   font-size: 0.875rem;
-  color: #1e293b;
+  color: var(--color-text-primary);
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 400px;
@@ -853,31 +860,34 @@ onMounted(() => {
   width: 100%;
   min-height: 300px;
   padding: 1rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.5rem;
   font-family: 'Courier New', monospace;
   font-size: 0.875rem;
   line-height: 1.5;
   resize: vertical;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 .no-config, .no-display {
   padding: 1.5rem;
   text-align: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-style: italic;
 }
 
 .capabilities-list {
-  padding: 0 1.5rem 1.5rem;
+
+  padding: 1.25rem 1.5rem 1.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
 .capability-tag {
-  background-color: #f3f4f6;
-  color: #374151;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
   border-radius: 0.25rem;
@@ -893,17 +903,17 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.75rem;
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: all 0.2s;
+  transition: var(--theme-transition);
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .refresh-btn:disabled {
@@ -911,28 +921,28 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-/* Responsive Design */
+
 @media (max-width: 768px) {
   .plugin-header {
     flex-direction: column;
     gap: 1rem;
   }
-  
+
   .plugin-meta {
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .meta-item {
     min-width: auto;
   }
-  
+
   .section-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
   }
-  
+
   .config-actions {
     width: 100%;
     justify-content: flex-end;

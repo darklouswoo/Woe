@@ -3,7 +3,10 @@ import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
 
 const router = createRouter({
-  history: createWebHistory(),
+
+
+
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: '/login',
@@ -51,7 +54,7 @@ const router = createRouter({
       path: '/users',
       name: 'Users',
       component: () => import('@/views/Users.vue'),
-      meta: { requiresAuth: true }
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/plugins',
@@ -70,6 +73,13 @@ const router = createRouter({
       name: 'Settings',
       component: () => import('@/views/Settings.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+
+      path: '/:pathMatch(.*)*',
+      name: 'NotFound',
+      component: () => import('@/views/NotFound.vue'),
+      meta: { requiresAuth: false }
     }
   ]
 })
@@ -78,9 +88,17 @@ router.beforeEach(async (to, _, next) => {
   const authStore = useAuthStore()
   try {
     const statusRes = await api.get('/init/status')
-    const status = statusRes.data as { initialized: boolean; hasAdmin: boolean }
-    if ((!status.initialized || !status.hasAdmin) && to.path !== '/setup') {
+    const status = statusRes.data as { initialized: boolean; hasAdmin: boolean; canInitialize?: boolean }
+    const canInitialize = typeof status.canInitialize === 'boolean'
+      ? status.canInitialize
+      : (!status.initialized || !status.hasAdmin)
+
+    if (canInitialize && to.path !== '/setup') {
       return next('/setup')
+    }
+
+    if (!canInitialize && to.path === '/setup') {
+      return next(authStore.isAuthenticated ? '/' : '/login')
     }
   } catch {}
 
@@ -88,6 +106,17 @@ router.beforeEach(async (to, _, next) => {
     next('/login')
   } else if (to.path === '/login' && authStore.isAuthenticated) {
     next('/')
+  } else if (to.meta.requiresAdmin && authStore.isAuthenticated) {
+
+
+    if (!authStore.user) {
+      await authStore.checkAuth()
+    }
+    if (!authStore.user?.admin) {
+      next('/')
+    } else {
+      next()
+    }
   } else {
     next()
   }

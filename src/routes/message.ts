@@ -1,16 +1,38 @@
+
+
+
+
+
+
+
+
+
+
 import { Hono } from "hono";
 import { HonoEnv } from "../types/hono.ts";
 import { createDrizzle } from "../drizzle/index.ts";
 import { Authenticator } from "../middleware/auth.ts";
-import { MessageHandlers } from "../handlers/messageHandlers.ts";
+import { MessageHandlers, MessageCreateTarget, resolveMessageCreateTarget } from "../handlers/messageHandlers.ts";
 import { ApiResponse } from "../utils/response.ts";
+import { DurableObjectMessageStreamHub } from "../services/messageStreamHub.ts";
+import { PushOutboxService } from "../services/push/outboxService.ts";
+import { publishOutboxJobs } from "../services/push/queuePublisher.ts";
+import { isEnqueueWritePaused } from "../services/writeGateService.ts";
+import { validatePositiveIntegerId } from "../utils/routeParams.ts";
+import { parseMessagePaging } from "../utils/messagePaging.ts";
+import { validateMessageCreateFields } from "../utils/messageCreateValidation.ts";
+import { MessageCreateBody, parseMessageCreateRequest } from "../utils/messageRequestBinding.ts";
 
 const message = new Hono<HonoEnv>();
+
 
 async function getClientAuth(c: any) {
   const drizzle = createDrizzle(c.env.DB);
   const authenticator = new Authenticator(drizzle);
-  const messageHandlers = new MessageHandlers(drizzle);
+  const streamHub = c.env.MESSAGE_STREAM_HUB
+    ? new DurableObjectMessageStreamHub(c.env.MESSAGE_STREAM_HUB)
+    : undefined;
+  const messageHandlers = new MessageHandlers(drizzle, streamHub);
 
   const basicAuthUser = await authenticator.authenticateBasic(c.req.raw, c.env);
   if (basicAuthUser) {
@@ -23,55 +45,124 @@ async function getClientAuth(c: any) {
   return { ...tokenInfo, messageHandlers };
 }
 
-async function getAppAuth(c: any) {
-  const drizzle = createDrizzle(c.env.DB);
-  const authenticator = new Authenticator(drizzle);
-  const messageHandlers = new MessageHandlers(drizzle);
 
-  const tokenInfo = await authenticator.authenticate(c.req.raw);
-  if (!tokenInfo || tokenInfo.tokenType !== "app") {
-    return null;
-  }
-  return { ...tokenInfo, messageHandlers };
-}
-
-// GET /message
 message.get("/", async (c) => {
   const auth = await getClientAuth(c);
   if (!auth) {
     return ApiResponse.error("Unauthorized", 401, "Client token or Basic auth required");
   }
-  const url = new URL(c.req.url);
-  const limitParam = url.searchParams.get("limit");
-  const sinceParam = url.searchParams.get("since");
-  const limit = limitParam ? Math.min(Math.max(parseInt(limitParam), 1), 200) : undefined;
-  const since = sinceParam ? Math.max(parseInt(sinceParam), 0) : undefined;
-  return await auth.messageHandlers.getAllMessages(auth.userId, limit, since, url.origin);
+
+  const parsed = parseMessagePaging(new URL(c.req.url).searchParams);
+  if (!parsed.ok) {
+    return parsed.response;
+  }
+  return await auth.messageHandlers.getAllMessages(auth.userId, parsed.value.limit, parsed.value.since);
 });
 
-// POST /message (requires app token)
-message.post("/", async (c) => {
-  const contentType = c.req.header("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    return ApiResponse.error("Bad Request", 400, "Content-Type must be application/json");
-  }
 
-  const body = (await c.req.json()) as { message: string; title?: string; priority?: number; extras?: any };
-  if (!body.message) {
-    return ApiResponse.error("Bad Request", 400, "Missing required field: message is required");
-  }
-  if (body.extras !== undefined && typeof body.extras !== "object") {
-    return ApiResponse.error("Bad Request", 400, "extras must be an object");
-  }
-
-  const auth = await getAppAuth(c);
+message.get("/count", async (c) => {
+  const auth = await getClientAuth(c);
   if (!auth) {
-    return ApiResponse.error("Unauthorized", 401, "Application token required");
+    return ApiResponse.error("Unauthorized", 401, "Client token or Basic auth required");
   }
-  return await auth.messageHandlers.createMessage(auth.resourceId!, body.message, body.title, body.priority, body.extras);
+  return await auth.messageHandlers.getMessageCount(auth.userId);
 });
 
-// DELETE /message
+
+message.get("/:id", async (c) => {
+  const id = c.req.param("id");
+  const invalidIdResponse = validatePositiveIntegerId(id);
+  if (invalidIdResponse) {
+    return invalidIdResponse;
+  }
+
+  const auth = await getClientAuth(c);
+  if (!auth) {
+    return ApiResponse.error("Unauthorized", 401, "Client token or Basic auth required");
+  }
+  return await auth.messageHandlers.getMessageById(auth.userId, id);
+});
+
+
+message.post("/", async (c) => {
+  const drizzle = createDrizzle(c.env.DB);
+
+
+  if (await isEnqueueWritePaused(drizzle)) {
+    return ApiResponse.error("Service Unavailable", 503, "Message creation is paused for deployment maintenance (enqueue write gate)");
+  }
+
+
+
+  const bound = await parseMessageCreateRequest(c.req.raw);
+  if (!bound.ok) return bound.response;
+  const body: MessageCreateBody = bound.data;
+
+
+  const validated = validateMessageCreateFields(body);
+  if (!validated.ok) {
+    return validated.response;
+  }
+  const fields = validated.value;
+
+  const authenticator = new Authenticator(drizzle);
+  const streamHub = c.env.MESSAGE_STREAM_HUB
+    ? new DurableObjectMessageStreamHub(c.env.MESSAGE_STREAM_HUB)
+    : undefined;
+  const messageHandlers = new MessageHandlers(drizzle, streamHub);
+
+  let target: MessageCreateTarget | Response;
+  try {
+
+    target = await resolveMessageCreateTarget(authenticator, drizzle, c.req.raw, c.env, body);
+  } catch (error) {
+    console.error("Failed to resolve message create target:", error);
+    return ApiResponse.error("Internal Server Error", 500, "Internal server error");
+  }
+  if (target instanceof Response) {
+    return target;
+  }
+  const { appId, userId } = target;
+
+  const response = await messageHandlers.createMessage(
+    appId,
+    fields.message,
+    fields.title,
+    fields.priority,
+    fields.extras
+  );
+
+
+  const pushQueue = c.env.PUSH_QUEUE;
+  if (response.ok && pushQueue) {
+    c.executionCtx.waitUntil((async () => {
+      try {
+        const created = await response.clone().json() as { id?: number };
+        if (typeof created.id !== "number") {
+          return;
+        }
+
+        const outbox = new PushOutboxService(drizzle);
+        const outboxIds = await outbox.getPendingJobIdsByMessage(userId, created.id);
+        if (!outboxIds.length) {
+          return;
+        }
+
+        const traceId = typeof crypto?.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+        await publishOutboxJobs(pushQueue, outboxIds, { traceId });
+      } catch (error) {
+        console.error("Failed to publish outbox jobs to push queue", error);
+      }
+    })());
+  }
+
+  return response;
+});
+
+
 message.delete("/", async (c) => {
   const auth = await getClientAuth(c);
   if (!auth) {
@@ -80,13 +171,18 @@ message.delete("/", async (c) => {
   return await auth.messageHandlers.deleteAllMessages(auth.userId);
 });
 
-// DELETE /message/:id
+
 message.delete("/:id", async (c) => {
+  const id = c.req.param("id");
+  const invalidIdResponse = validatePositiveIntegerId(id);
+  if (invalidIdResponse) {
+    return invalidIdResponse;
+  }
+
   const auth = await getClientAuth(c);
   if (!auth) {
     return ApiResponse.error("Unauthorized", 401, "Client token or Basic auth required");
   }
-  const id = c.req.param("id");
   return await auth.messageHandlers.deleteMessage(auth.userId, id);
 });
 

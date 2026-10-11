@@ -1,47 +1,102 @@
-import { Message, PagedMessages, Paging } from "../types/index.ts";
-import { ApiResponse, safeJsonParse, formatDate } from "../utils/response.ts";
+
+
+
+
+
+
+import { Message, PagedMessages, Paging, Env } from "../types/index.ts";
+import { ApiResponse, formatDate } from "../utils/response.ts";
+import { parseMessageExtras } from "../utils/messageExtras.ts";
+import { isValidMessagePaging, invalidMessagePagingResponse } from "../utils/messagePaging.ts";
+import { validateMessageCreateFields } from "../utils/messageCreateValidation.ts";
 import { DrizzleDB } from "../drizzle/index.ts";
 import { messages, applications } from "../models/index.ts";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, count } from "drizzle-orm";
+import { MessageStreamHub } from "../services/messageStreamHub.ts";
+import type { Authenticator } from "../middleware/auth.ts";
 
-// Message Management API handlers for Woe - Gotify compatible core feature
+
+
+
+export interface MessageCreateTarget {
+  appId: number;
+  userId: number;
+}
+
+
+
+
+
+
+
+export async function resolveMessageCreateTarget(
+  authenticator: Pick<Authenticator, "requireApp" | "requireClient">,
+  drizzle: DrizzleDB,
+  request: Request,
+  env: Env,
+  body: { appid?: number }
+): Promise<MessageCreateTarget | Response> {
+  const appAuth = await authenticator.requireApp(request);
+  if (appAuth && appAuth.resourceId) {
+    return { appId: appAuth.resourceId, userId: appAuth.userId };
+  }
+
+  const clientAuth = await authenticator.requireClient(request, env);
+  if (!clientAuth) {
+    return ApiResponse.error("Unauthorized", 401, "Application token, client token or Basic auth required");
+  }
+
+  const appid = body.appid;
+  if (typeof appid !== "number" || !Number.isSafeInteger(appid) || appid <= 0) {
+    return ApiResponse.error("Bad Request", 400, "appid is required when not authenticating with an application token");
+  }
+
+  const appRow = await drizzle
+    .select({ id: applications.id, userId: applications.userId })
+    .from(applications)
+    .where(eq(applications.id, appid))
+    .get();
+
+  if (!appRow || appRow.userId !== clientAuth.userId) {
+    return ApiResponse.error("Bad Request", 400, "appid not found");
+  }
+
+  return { appId: appRow.id, userId: clientAuth.userId };
+}
+
+
 export class MessageHandlers {
-  private clients: Set<WebSocket> = new Set();
+  constructor(
+    private drizzle: DrizzleDB,
+    private streamHub?: MessageStreamHub
+  ) {}
 
-  constructor(private drizzle: DrizzleDB) {}
 
-  // Helper to map DB result to Message type
+
   private mapToMessage(row: any): Message {
     return {
       id: row.id,
       appid: row.appId,
       message: row.message,
-      title: row.title,
-      priority: row.priority,
-      date: formatDate(row.date) || "", // date should not be null in messages
-      extras: safeJsonParse(row.extras)
+      title: row.title || "",
+      priority: row.priority ?? 0,
+      date: formatDate(row.date) || "",
+      extras: parseMessageExtras(row.extras)
     };
   }
 
-  // Broadcast message to all connected clients
-  private broadcastMessage(message: Message) {
-    const payload = JSON.stringify(message);
-    for (const client of this.clients) {
-      try {
-        client.send(payload);
-      } catch (error) {
-        console.error("Failed to send message to client:", error);
-        this.clients.delete(client);
-      }
-    }
-  }
 
-  // GET /message - Return all messages for the current user
-  async getAllMessages(userId: number, limit: number = 100, since: number = 0, origin?: string): Promise<Response> {
+
+  async getAllMessages(userId: number, limit: number = 100, since: number = 0): Promise<Response> {
+
+
+    if (!isValidMessagePaging(limit, since)) {
+      return invalidMessagePagingResponse(limit, since);
+    }
     try {
-      // Limit is required by spec (default 100, max 200)
+
       const effectiveLimit = Math.min(Math.max(limit, 1), 200);
-      
+
       const query = this.drizzle
         .select({
           id: messages.id,
@@ -57,33 +112,37 @@ export class MessageHandlers {
         .from(messages)
         .where(since > 0 ? sql`${messages.userid} = ${userId} AND ${messages.id} < ${since}` : eq(messages.userid, userId))
         .orderBy(desc(messages.id))
-        .limit(effectiveLimit);
+        .limit(effectiveLimit + 1);
 
       const results = await query.execute();
-      
-      const mappedMessages = results.map(row => ({
+      const hasNextPage = results.length > effectiveLimit;
+      const pageResults = hasNextPage ? results.slice(0, effectiveLimit) : results;
+
+      const mappedMessages = pageResults.map(row => ({
         id: row.id,
         appid: row.appId,
         message: row.message,
         title: row.title || "",
-        priority: row.priority || 0,
+        priority: row.priority ?? 0,
         date: formatDate(row.date) || "",
-        extras: safeJsonParse(row.extras)
+        extras: parseMessageExtras(row.extras)
       }));
 
-      // Get last message for pagination
+
       const lastMessage = mappedMessages.length > 0 ? mappedMessages[mappedMessages.length - 1] : null;
 
-      // Construct paging object
+
+
+
       const paging: Paging = {
         size: mappedMessages.length,
         limit: effectiveLimit,
-        since: lastMessage ? lastMessage.id : since
+        since: hasNextPage && lastMessage ? lastMessage.id : 0
       };
 
-      if (lastMessage) {
+      if (hasNextPage && lastMessage) {
         const nextPath = `/message?limit=${effectiveLimit}&since=${lastMessage.id}`;
-        paging.next = origin ? `${origin}${nextPath}` : nextPath;
+        paging.next = nextPath;
       }
 
       const response: PagedMessages = {
@@ -97,17 +156,72 @@ export class MessageHandlers {
     }
   }
 
-  // POST /message - Create a message (核心功能)
-  async createMessage(appId: number, message: string, title?: string, priority?: number, extras?: any): Promise<Response> {
-    // Validate priority range (0-10 for safety)
-    if (priority !== undefined && (priority < 0 || priority > 10)) {
-      return ApiResponse.error("Bad Request", 400, "Priority must be between 0 and 10");
+
+  async getMessageById(userId: number, id: string): Promise<Response> {
+    try {
+      const messageId = parseInt(id);
+      if (Number.isNaN(messageId)) {
+        return ApiResponse.error("Bad Request", 400, "Invalid message ID");
+      }
+
+      const row = await this.drizzle
+        .select({
+          id: messages.id,
+          appId: messages.appid,
+          message: messages.message,
+          title: messages.title,
+          priority: messages.priority,
+          date: messages.date,
+          extras: messages.extras
+        })
+        .from(messages)
+        .where(sql`${messages.id} = ${messageId} AND ${messages.userid} = ${userId}`)
+        .get();
+
+      if (!row) {
+        return ApiResponse.error("Not Found", 404, "Message not found");
+      }
+
+      return ApiResponse.json(this.mapToMessage(row));
+    } catch (error) {
+      return ApiResponse.error("Database error", 500, "Failed to retrieve message");
     }
+  }
+
+
+
+  async getMessageCount(userId: number): Promise<Response> {
+    try {
+      const result = await this.drizzle
+        .select({ count: count() })
+        .from(messages)
+        .where(eq(messages.userid, userId))
+        .get();
+
+      return ApiResponse.json({ count: result?.count || 0 });
+    } catch (error) {
+      return ApiResponse.error("Database error", 500, "Failed to retrieve message count");
+    }
+  }
+
+
+
+  async createMessage(appId: number, message: string, title?: string, priority?: number, extras?: any): Promise<Response> {
+
+
+    const validated = validateMessageCreateFields({ message, title, priority, extras });
+    if (!validated.ok) {
+      return validated.response;
+    }
+    const fields = validated.value;
 
     try {
-      // Get application info to determine user
       const appResult = await this.drizzle
-        .select({ userId: applications.userId })
+        .select({
+          userId: applications.userId,
+          defaultPriority: applications.defaultPriority,
+          name: applications.name
+        })
         .from(applications)
         .where(eq(applications.id, appId))
         .get();
@@ -118,17 +232,20 @@ export class MessageHandlers {
 
       const userId = appResult.userId;
 
-      // Handle extras parsing if it's a string, or leave as is if it's already a string suitable for DB
-      const extrasStr = typeof extras === 'object' ? JSON.stringify(extras) : (typeof extras === 'string' ? extras : null);
+      const effectivePriority = fields.priority ?? appResult.defaultPriority ?? 0;
+
+
+      const extrasStr = typeof fields.extras === "object" ? JSON.stringify(fields.extras) : null;
 
       const result = await this.drizzle
         .insert(messages)
         .values({
           userid: userId,
           appid: appId,
-          message,
-          title: title || "",
-          priority: priority || 0,
+          message: fields.message,
+
+          title: fields.title && fields.title.trim() ? fields.title : appResult.name,
+          priority: effectivePriority,
           extras: extrasStr
         })
         .returning({
@@ -151,12 +268,12 @@ export class MessageHandlers {
         appid: row.appId,
         message: row.message,
         title: row.title || "",
-        priority: row.priority || 0,
+        priority: row.priority ?? 0,
         date: formatDate(row.date) || "",
-        extras: safeJsonParse(row.extras)
+        extras: parseMessageExtras(row.extras)
       };
 
-      // 更新应用的最后使用时间（心跳），带有频率限制
+
       try {
         await this.drizzle
           .update(applications)
@@ -164,10 +281,16 @@ export class MessageHandlers {
           .where(sql`${applications.id} = ${appId} AND (${applications.lastUsed} IS NULL OR ${applications.lastUsed} < datetime('now', '-1 minute'))`);
       } catch (error) {
         console.error("Failed to update application last_used:", error);
-        // 静默失败，不影响消息创建流程
+
       }
 
-      this.broadcastMessage(newMessage);
+      if (this.streamHub) {
+        try {
+          await this.streamHub.broadcast(userId as number, newMessage);
+        } catch (error) {
+          console.error("Failed to broadcast message to websocket subscribers:", error);
+        }
+      }
 
       try {
         const userIdNum = userId as number;
@@ -179,6 +302,7 @@ export class MessageHandlers {
           message: {
             id: newMessage.id,
             appId: newMessage.appid,
+            date: newMessage.date,
             title: newMessage.title,
             priority: newMessage.priority,
             content: newMessage.message,
@@ -193,12 +317,17 @@ export class MessageHandlers {
     }
   }
 
-  // GET /application/{id}/message - Return all messages from a specific application
-  async getApplicationMessages(userId: number, appId: string, limit: number = 100, since: number = 0, origin?: string): Promise<Response> {
+
+
+  async getApplicationMessages(userId: number, appId: string, limit: number = 100, since: number = 0): Promise<Response> {
+
+    if (!isValidMessagePaging(limit, since)) {
+      return invalidMessagePagingResponse(limit, since);
+    }
     try {
       const numericAppId = parseInt(appId);
       const effectiveLimit = Math.min(Math.max(limit, 1), 200);
-      
+
       let query = this.drizzle
         .select({
           id: messages.id,
@@ -212,36 +341,40 @@ export class MessageHandlers {
           extras: messages.extras
         })
         .from(messages)
-        .where(since > 0 
-          ? sql`${messages.appid} = ${numericAppId} AND ${messages.userid} = ${userId} AND ${messages.id} < ${since}` 
+        .where(since > 0
+          ? sql`${messages.appid} = ${numericAppId} AND ${messages.userid} = ${userId} AND ${messages.id} < ${since}`
           : sql`${messages.appid} = ${numericAppId} AND ${messages.userid} = ${userId}`)
         .orderBy(desc(messages.id))
-        .limit(effectiveLimit);
+        .limit(effectiveLimit + 1);
 
       const results = await query.execute();
-      
-      const mappedMessages = results.map(row => ({
+      const hasNextPage = results.length > effectiveLimit;
+      const pageResults = hasNextPage ? results.slice(0, effectiveLimit) : results;
+
+      const mappedMessages = pageResults.map(row => ({
         id: row.id,
         appid: row.appId,
         message: row.message,
         title: row.title || "",
         priority: row.priority || 0,
         date: formatDate(row.date) || "",
-        extras: safeJsonParse(row.extras)
+        extras: parseMessageExtras(row.extras)
       }));
 
-      // Get last message for pagination
+
       const lastMessage = mappedMessages.length > 0 ? mappedMessages[mappedMessages.length - 1] : null;
+
+
 
       const paging: Paging = {
         size: mappedMessages.length,
         limit: effectiveLimit,
-        since: lastMessage ? lastMessage.id : since
+        since: hasNextPage && lastMessage ? lastMessage.id : 0
       };
 
-      if (lastMessage) {
+      if (hasNextPage && lastMessage) {
         const nextPath = `/application/${appId}/message?limit=${effectiveLimit}&since=${lastMessage.id}`;
-        paging.next = origin ? `${origin}${nextPath}` : nextPath;
+        paging.next = nextPath;
       }
 
       const response: PagedMessages = {
@@ -255,11 +388,12 @@ export class MessageHandlers {
     }
   }
 
-  // DELETE /message/{id} - Delete a specific message
+
+
   async deleteMessage(userId: number, id: string): Promise<Response> {
     try {
       const messageId = parseInt(id);
-      
+
       const result = await this.drizzle
         .delete(messages)
         .where(sql`${messages.id} = ${messageId} AND ${messages.userid} = ${userId}`);
@@ -285,7 +419,8 @@ export class MessageHandlers {
     }
   }
 
-  // DELETE /message - Delete all messages
+
+
   async deleteAllMessages(userId: number): Promise<Response> {
     try {
       await this.drizzle
@@ -298,11 +433,12 @@ export class MessageHandlers {
     }
   }
 
-  // DELETE /application/{id}/message - Delete all messages from a specific application
+
+
   async deleteApplicationMessages(userId: number, appId: string): Promise<Response> {
     try {
       const numericAppId = parseInt(appId);
-      
+
       await this.drizzle
         .delete(messages)
         .where(sql`${messages.appid} = ${numericAppId} AND ${messages.userid} = ${userId}`);
@@ -322,38 +458,4 @@ export class MessageHandlers {
     }
   }
 
-  // GET /stream - WebSocket endpoint for real-time message streaming
-  async handleWebSocket(websocket: WebSocket): Promise<void> {
-    try {
-      // Accept WebSocket connection
-      websocket.accept();
-
-      this.clients.add(websocket);
-      console.log("WebSocket connection established");
-
-      websocket.addEventListener("message", (event) => {
-        // Handle incoming WebSocket messages if needed
-        // Typically clients don't send messages in Gotify, but we can keep alive or handle pings
-        try {
-           // Optional: Handle ping/pong or simple commands
-        } catch (error) {
-          console.error("Invalid WebSocket message format:", error);
-        }
-      });
-
-      websocket.addEventListener("close", () => {
-        console.log("WebSocket connection closed");
-        this.clients.delete(websocket);
-      });
-
-      websocket.addEventListener("error", (error) => {
-        console.error("WebSocket error:", error);
-        this.clients.delete(websocket);
-      });
-
-    } catch (error) {
-      console.error("WebSocket setup error:", error);
-      websocket.close(1011, "Internal server error");
-    }
-  }
 }

@@ -1,56 +1,51 @@
 <template>
-  <div class="connection-status" :class="{ 'status-connected': connected, 'status-connecting': connecting, 'status-disconnected': !connected && !connecting }">
+
+  <div v-if="!connected" class="connection-status" :class="connecting ? 'status-connecting' : 'status-disconnected'">
     <div class="status-indicator"></div>
     <div class="status-text">
-      <span v-if="connecting">Connecting...</span>
-      <span v-else-if="connected">Connected</span>
-      <span v-else>Disconnected</span>
-      
-      <button 
-        v-if="!connected && !connecting" 
-        @click="reconnect" 
-        class="reconnect-btn"
-        title="Reconnect"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-        </svg>
-        Reconnect
-      </button>
+      <span v-if="connecting">{{ $t('connection.connecting') }}</span>
+      <template v-else>
+        <span>{{ $t('connection.disconnected') }}</span>
+        <button @click="emit('reconnect')" class="reconnect-btn" :title="$t('connection.reconnect')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+          </svg>
+          {{ $t('connection.reconnect') }}
+        </button>
+      </template>
     </div>
-    
-    <div v-if="lastConnected" class="last-connected">
-      Last connected: {{ formatTime(lastConnected) }}
+
+    <div v-if="!connecting && lastConnected" class="last-connected" :title="formatDateTime(lastConnected)">
+      {{ $t('connection.lastConnected', { time: formatRelativeTime(lastConnected) }) }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { formatRelativeTime, formatDateTime } from '@/utils/datetime'
 
 interface Props {
   connected: boolean
   connecting?: boolean
   lastConnected?: string
-  reconnect?: () => void
 }
 
 defineProps<Props>()
 
-const formatTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString()
-}
+const emit = defineEmits<{ (e: 'reconnect'): void }>()
 </script>
 
 <style scoped>
 .connection-status {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.75rem;
   padding: 0.75rem 1rem;
-  background-color: white;
+  background-color: var(--color-bg-primary);
   border-radius: 2rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
   position: fixed;
   bottom: 2rem;
   right: 2rem;
@@ -62,34 +57,31 @@ const formatTime = (dateString: string) => {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background-color: #ef4444;
+  background-color: var(--color-error);
   transition: background-color 0.3s;
 }
 
-.status-connected .status-indicator {
-  background-color: #10b981;
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.3);
-}
-
 .status-connecting .status-indicator {
-  background-color: #f59e0b;
+  background-color: var(--color-warning);
   animation: pulse 1.5s infinite;
 }
 
 .status-text {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .reconnect-btn {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  margin-left: 0.5rem;
   padding: 0.25rem 0.5rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.25rem;
   font-size: 0.75rem;
@@ -98,13 +90,12 @@ const formatTime = (dateString: string) => {
 }
 
 .reconnect-btn:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .last-connected {
   font-size: 0.75rem;
-  color: #6b7280;
-  margin-top: 0.25rem;
+  color: var(--color-text-tertiary);
 }
 
 @keyframes pulse {
@@ -112,19 +103,19 @@ const formatTime = (dateString: string) => {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
   }
-  
+
   70% {
     transform: scale(1);
     box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
   }
-  
+
   100% {
     transform: scale(0.95);
     box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
   }
 }
 
-/* Responsive Design */
+
 @media (max-width: 768px) {
   .connection-status {
     bottom: 1rem;
@@ -132,21 +123,10 @@ const formatTime = (dateString: string) => {
     left: 1rem;
     justify-content: center;
   }
-  
-  .status-text {
-    order: 2;
-  }
-  
-  .reconnect-btn {
-    order: 1;
-    margin-left: 0;
-  }
-  
+
   .last-connected {
-    order: 3;
     width: 100%;
     text-align: center;
-    margin-top: 0.5rem;
   }
 }
 </style>

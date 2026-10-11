@@ -1,0 +1,151 @@
+import { PushOutboxService } from "../../src/services/push/outboxService";
+import { consumePushQueueBatch } from "../../src/services/push/queueConsumer";
+import { CleanupService } from "../../src/services/cleanupService";
+
+function makeBatchMessage(body: any) {
+  return { body, ack: jest.fn(), retry: jest.fn() };
+}
+
+function makeOutboxStub(overrides: any = {}) {
+  return {
+    getJobById: jest.fn().mockResolvedValue({
+
+      id: 1, userId: 1, messageId: 1, platform: "test-platform", clientId: null,
+      payloadJson: JSON.stringify({
+        deviceToken: "t", message: "m", platform: "test-platform",
+        messageId: 1, appid: 1, date: "2026-09-02T00:00:00Z",
+      }),
+      status: "pending", attemptCount: 0, nextRetryAt: null,
+      lastError: null, createdAt: null, updatedAt: null,
+    }),
+    markProcessing: jest.fn().mockResolvedValue(true),
+    getPushTargetByClientId: jest.fn().mockResolvedValue({
+      kind: "ready", clientId: 1, platform: "test-platform",
+      deviceToken: "t", tokenUpdatedAt: "2026-09-24T00:00:00.000Z", tokenStatus: "active",
+    }),
+    markSuccess: jest.fn(),
+    scheduleRetry: jest.fn(),
+    markDead: jest.fn(),
+    suspend: jest.fn(),
+    ...overrides,
+  };
+}
+
+describe("provider 缺失/占位 → 挂起而非永久死信（queueConsumer）", () => {
+  test("无 provider 时 suspend（回 pending + 未来重试 + 不计尝试次数），不 markDead", async () => {
+    const outbox = makeOutboxStub();
+    const providers = { get: jest.fn().mockReturnValue(null) };
+    const batch = { messages: [makeBatchMessage({ outboxId: 1, traceId: "t", attempt: 0, enqueueAt: new Date().toISOString() })] } as any;
+    await consumePushQueueBatch(batch, { outbox, providers, queue: { sendBatch: jest.fn() } } as any);
+    expect(outbox.suspend).toHaveBeenCalledWith(
+      1,
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      expect.stringContaining("no provider for platform test-platform")
+    );
+    expect(outbox.markDead).not.toHaveBeenCalled();
+    expect(batch.messages[0].ack).toHaveBeenCalled();
+  });
+
+  test("PROVIDER_NOT_IMPLEMENTED → markDead（占位 provider 属永久状态，不挂起）", async () => {
+    const outbox = makeOutboxStub();
+    const providers = {
+      get: jest.fn().mockReturnValue({
+        send: jest.fn().mockResolvedValue({ ok: false, retriable: false, errorCode: "PROVIDER_NOT_IMPLEMENTED" }),
+      }),
+    };
+    const batch = { messages: [makeBatchMessage({ outboxId: 1, traceId: "t", attempt: 0, enqueueAt: new Date().toISOString() })] } as any;
+    await consumePushQueueBatch(batch, { outbox, providers, queue: { sendBatch: jest.fn() } } as any);
+    expect(outbox.markDead).toHaveBeenCalledWith(1, 1, "PROVIDER_NOT_IMPLEMENTED");
+    expect(outbox.suspend).not.toHaveBeenCalled();
+  });
+
+  test("PROVIDER_CONFIG_MISSING → suspend（即便 retriable=false）", async () => {
+    const outbox = makeOutboxStub();
+    const providers = {
+      get: jest.fn().mockReturnValue({
+        send: jest.fn().mockResolvedValue({ ok: false, retriable: false, suspend: true, errorCode: "PROVIDER_CONFIG_MISSING", errorMessage: "config missing" }),
+      }),
+    };
+    const batch = { messages: [makeBatchMessage({ outboxId: 1, traceId: "t", attempt: 0, enqueueAt: new Date().toISOString() })] } as any;
+    await consumePushQueueBatch(batch, { outbox, providers, queue: { sendBatch: jest.fn() } } as any);
+    expect(outbox.suspend).toHaveBeenCalled();
+    expect(outbox.markDead).not.toHaveBeenCalled();
+  });
+
+  test("普通可重试失败仍走 scheduleRetry（回归保护）", async () => {
+    const outbox = makeOutboxStub();
+    const providers = {
+      get: jest.fn().mockReturnValue({
+        send: jest.fn().mockResolvedValue({ ok: false, retriable: true, errorMessage: "503" }),
+      }),
+    };
+    const queue = { sendBatch: jest.fn().mockResolvedValue(undefined) };
+    const batch = { messages: [makeBatchMessage({ outboxId: 1, traceId: "t", attempt: 0, enqueueAt: new Date().toISOString() })] } as any;
+    await consumePushQueueBatch(batch, { outbox, providers, queue, maxRetries: 3, retryBackoffMs: 1000 } as any);
+    expect(outbox.scheduleRetry).toHaveBeenCalled();
+    expect(outbox.suspend).not.toHaveBeenCalled();
+  });
+
+  test("载荷损坏仍直接 dead（不可恢复，非挂起场景）", async () => {
+    const outbox = makeOutboxStub({
+      getJobById: jest.fn().mockResolvedValue({
+        id: 1, userId: 1, messageId: 1, platform: "test-platform", clientId: null,
+        payloadJson: "not-json", status: "pending", attemptCount: 0,
+        nextRetryAt: null, lastError: null, createdAt: null, updatedAt: null,
+      }),
+    });
+    const providers = { get: jest.fn().mockReturnValue({ send: jest.fn() }) };
+    const batch = { messages: [makeBatchMessage({ outboxId: 1, traceId: "t", attempt: 0, enqueueAt: new Date().toISOString() })] } as any;
+    await consumePushQueueBatch(batch, { outbox, providers, queue: { sendBatch: jest.fn() } } as any);
+    expect(outbox.markDead).toHaveBeenCalledWith(1, 1, "Invalid outbox payload");
+  });
+});
+
+describe("outboxService.reclaimStaleProcessing", () => {
+  test("UPDATE 置回 pending 且 lastError 标注回收，返回行数", async () => {
+    const state: any = { setPayload: null };
+    const drizzle = {
+      update: jest.fn(() => ({
+        set: jest.fn((payload: any) => {
+          state.setPayload = payload;
+          return {
+            where: jest.fn(() => Promise.resolve({ meta: { changes: 2 } })),
+          };
+        }),
+      })),
+    };
+    const svc = new PushOutboxService(drizzle as any);
+    const count = await svc.reclaimStaleProcessing(10 * 60 * 1000);
+    expect(count).toBe(2);
+    expect(state.setPayload.status).toBe("pending");
+    expect(state.setPayload.lastError).toContain("Reclaimed");
+  });
+});
+
+describe("cleanupService.cleanupPushOutbox", () => {
+  test("仅清理终态（success/dead）且按参数化天数", async () => {
+    const prepare = jest.fn().mockReturnThis();
+    const bind = jest.fn().mockReturnThis();
+    const run = jest.fn().mockResolvedValue({ meta: { changes: 5 } });
+    const db = { prepare, bind, run } as any;
+    const svc = new CleanupService(db);
+    const result = await svc.cleanupPushOutbox(30);
+    expect(result.success).toBe(true);
+    expect(result.deletedCount).toBe(5);
+    expect(prepare.mock.calls[0][0]).toContain("status IN ('success', 'dead')");
+    expect(bind).toHaveBeenCalledWith("30");
+  });
+
+  test("执行出错时返回 success:false 而非抛出", async () => {
+    const db = {
+      prepare: jest.fn().mockReturnThis(),
+      bind: jest.fn().mockReturnThis(),
+      run: jest.fn().mockRejectedValue(new Error("D1 down")),
+    } as any;
+    const svc = new CleanupService(db);
+    const result = await svc.cleanupPushOutbox(30);
+    expect(result.success).toBe(false);
+    expect(result.deletedCount).toBe(0);
+    expect(result.error).toContain("D1 down");
+  });
+});

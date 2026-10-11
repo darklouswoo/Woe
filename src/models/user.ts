@@ -1,5 +1,11 @@
+
+
+
+
+
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+
 
 export const users = sqliteTable('users', {
   id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),
@@ -7,7 +13,7 @@ export const users = sqliteTable('users', {
   pass: text('pass').notNull(),
   admin: integer('admin', { mode: 'boolean' }).notNull().default(false),
   disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
-  // User profile fields
+
   nickname: text('nickname').notNull(),
   email: text('email').notNull(),
   avatar: text('avatar'),

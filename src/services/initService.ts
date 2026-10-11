@@ -1,3 +1,11 @@
+
+
+
+
+
+
+
+
 import type { D1Database } from "@cloudflare/workers-types";
 import { createDrizzle } from "../drizzle/index.ts";
 import { users, systemState } from "../models/index.ts";
@@ -10,12 +18,14 @@ export interface InitializationResult {
   error?: string;
 }
 
+
 export class InitService {
   private drizzle;
 
   constructor(private db: D1Database) {
     this.drizzle = createDrizzle(db);
   }
+
 
   private async tableExists(tableName: string): Promise<boolean> {
     try {
@@ -28,6 +38,7 @@ export class InitService {
       return false;
     }
   }
+
 
   async isSystemInitialized(): Promise<boolean> {
     try {
@@ -44,6 +55,23 @@ export class InitService {
     }
   }
 
+
+  async isInitializationLocked(): Promise<boolean> {
+    try {
+      const exists = await this.tableExists("system_state");
+      if (!exists) return false;
+      const result = await this.drizzle
+        .select({ value: systemState.value })
+        .from(systemState)
+        .where(eq(systemState.key, "init_locked"))
+        .get();
+      return !!result && (result.value === "true" || result.value === "1");
+    } catch (_) {
+      return false;
+    }
+  }
+
+
   async hasAdminUser(): Promise<boolean> {
     try {
       const exists = await this.tableExists("users");
@@ -59,12 +87,127 @@ export class InitService {
     }
   }
 
+
+
+
+
+
+
+
+
+
+
+
+
+  async sweepStaleInitializationClaims(): Promise<void> {
+    await this.db
+      .prepare(
+        `DELETE FROM system_state WHERE key = 'is_initializing' AND datetime(created_at) < datetime('now', '-10 minutes')`
+      )
+      .run();
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  async claimInitialization(): Promise<string | null> {
+
+    await this.sweepStaleInitializationClaims();
+    const owner = crypto.randomUUID();
+    const result = await this.db
+      .prepare(
+        `INSERT INTO system_state (key, value, created_at, updated_at)
+         SELECT 'is_initializing', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+         WHERE NOT EXISTS (SELECT 1 FROM system_state WHERE key = 'is_initialized')
+           AND NOT EXISTS (SELECT 1 FROM system_state WHERE key = 'is_initializing')`
+      )
+      .bind(owner)
+      .run();
+    return result.meta?.changes && result.meta.changes > 0 ? owner : null;
+  }
+
+
+
+
+
+
+
+
+  async releaseInitializationClaim(owner: string): Promise<void> {
+    await this.db
+      .prepare(`DELETE FROM system_state WHERE key = 'is_initializing' AND value = ?`)
+      .bind(owner)
+      .run();
+  }
+
+
+
+
+
+
+
+
+  async assertClaimOwnership(owner: string): Promise<boolean> {
+    const exists = await this.tableExists("system_state");
+    if (!exists) return false;
+    const result = await this.drizzle
+      .select({ value: systemState.value })
+      .from(systemState)
+      .where(eq(systemState.key, "is_initializing"))
+      .get();
+    return !!result && result.value === owner;
+  }
+
+
+
+
+
+
+  async isInitializationInProgress(): Promise<boolean> {
+    try {
+      const exists = await this.tableExists("system_state");
+      if (!exists) return false;
+      const result = await this.drizzle
+        .select({ value: systemState.value })
+        .from(systemState)
+        .where(eq(systemState.key, "is_initializing"))
+        .get();
+      return !!result;
+    } catch {
+      return false;
+    }
+  }
+
+
   async markAsInitialized(): Promise<void> {
     await this.drizzle
       .insert(systemState)
       .values({ key: "is_initialized", value: "true", createdAt: sql`CURRENT_TIMESTAMP`, updatedAt: sql`CURRENT_TIMESTAMP` })
       .onConflictDoUpdate({ target: systemState.key, set: { value: "true", updatedAt: sql`CURRENT_TIMESTAMP` } });
   }
+
+
+  async lockInitialization(): Promise<void> {
+    await this.drizzle
+      .insert(systemState)
+      .values({ key: "init_locked", value: "true", createdAt: sql`CURRENT_TIMESTAMP`, updatedAt: sql`CURRENT_TIMESTAMP` })
+      .onConflictDoUpdate({ target: systemState.key, set: { value: "true", updatedAt: sql`CURRENT_TIMESTAMP` } });
+  }
+
 
   async createAdminUser(username: string, password: string): Promise<number | null> {
     const existing = await this.drizzle
@@ -82,7 +225,7 @@ export class InitService {
       .values({
         name: username,
         nickname: username,
-        email: 'needupdate@crownkin.space',
+        email: 'needupdate@example.com',
         pass: hashedassword,
         admin: true,
         disabled: false,
@@ -92,16 +235,21 @@ export class InitService {
     return inserted && inserted.length > 0 ? inserted[0].id : null;
   }
 
-  async getInitStatus(): Promise<{ initialized: boolean; hasAdmin: boolean; canInitialize: boolean }> {
+
+  async getInitStatus(): Promise<{ initialized: boolean; hasAdmin: boolean; locked: boolean; initializing: boolean; canInitialize: boolean }> {
     const initialized = await this.isSystemInitialized();
     const hasAdmin = await this.hasAdminUser();
-    return { initialized, hasAdmin, canInitialize: !initialized || !hasAdmin };
+    const locked = await this.isInitializationLocked();
+    const initializing = await this.isInitializationInProgress();
+    return { initialized, hasAdmin, locked, initializing, canInitialize: !initialized && !locked && !initializing };
   }
+
 
   async ensureSchema(): Promise<void> {
     const migrationRunner = new MigrationRunner(this.db);
     await migrationRunner.runPendingMigrations();
   }
+
 
   async validateDatabase(): Promise<boolean> {
     try {
@@ -117,4 +265,3 @@ export class InitService {
     }
   }
 }
-

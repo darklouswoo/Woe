@@ -22,21 +22,21 @@
           </div>
           <h3 class="confirm-dialog-title">{{ title }}</h3>
         </div>
-        
+
         <div class="confirm-dialog-body">
           <p class="confirm-dialog-message">{{ message }}</p>
         </div>
-        
+
         <div class="confirm-dialog-footer">
-          <button 
-            @click="handleCancel" 
+          <button
+            @click="handleCancel"
             class="btn btn-secondary"
             :disabled="loading"
           >
             {{ cancelText }}
           </button>
-          <button 
-            @click="handleConfirm" 
+          <button
+            @click="handleConfirm"
             class="btn btn-primary"
             :class="[`btn-${type}`]"
             :disabled="loading"
@@ -108,7 +108,7 @@ watch(() => props.visible, (newVal) => {
 .confirm-dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -119,9 +119,9 @@ watch(() => props.visible, (newVal) => {
 .confirm-dialog-container {
   width: 100%;
   max-width: 420px;
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   animation: dialogSlideIn 0.2s ease-out;
 }
@@ -154,21 +154,21 @@ watch(() => props.visible, (newVal) => {
 }
 
 .icon.warning {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .icon.danger {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .icon.info {
-  color: #3b82f6;
+  color: var(--color-info);
 }
 
 .confirm-dialog-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
   text-align: center;
 }
@@ -179,7 +179,7 @@ watch(() => props.visible, (newVal) => {
 
 .confirm-dialog-message {
   font-size: 0.9375rem;
-  color: #4b5563;
+  color: var(--color-text-secondary);
   line-height: 1.5;
   text-align: center;
   margin: 0;
@@ -189,8 +189,8 @@ watch(() => props.visible, (newVal) => {
   display: flex;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  border-top: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  border-top: 1px solid var(--color-border-primary);
+  background-color: var(--color-bg-tertiary);
 }
 
 .btn {
@@ -214,39 +214,39 @@ watch(() => props.visible, (newVal) => {
 }
 
 .btn-secondary {
-  background-color: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background-color: #f3f4f6;
-  border-color: #9ca3af;
+  background-color: var(--color-bg-hover);
+  border-color: var(--color-border-primary);
 }
 
 .btn-primary {
-  color: white;
-  background-color: #3b82f6;
+  color: var(--color-text-inverse);
+  background-color: var(--color-primary);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .btn-primary.btn-warning {
-  background-color: #f59e0b;
+  background-color: var(--color-warning);
 }
 
 .btn-primary.btn-warning:hover:not(:disabled) {
-  background-color: #d97706;
+  background-color: var(--color-warning-hover);
 }
 
 .btn-primary.btn-danger {
-  background-color: #ef4444;
+  background-color: var(--color-error);
 }
 
 .btn-primary.btn-danger:hover:not(:disabled) {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .confirm-dialog-enter-active,
@@ -275,11 +275,11 @@ watch(() => props.visible, (newVal) => {
     max-width: 100%;
     margin: 1rem;
   }
-  
+
   .confirm-dialog-footer {
     flex-direction: column;
   }
-  
+
   .btn {
     width: 100%;
   }

@@ -54,17 +54,46 @@ export function safeJsonParse(value: string | null | undefined): any {
   }
 }
 
-/**
- * 格式化日期为ISO字符串格式
- * 处理SQLite日期时间格式(YYYY-MM-DD HH:MM:SS)转换为ISO格式(YYYY-MM-DDTHH:MM:SSZ)
- */
+
+
+
+
+
+
+export async function parseJsonBody<T>(
+  request: Request
+): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  try {
+    const parsed = (await request.json()) as T;
+    if (parsed === null) {
+      return { ok: false, response: ApiResponse.error("Bad Request", 400, "Invalid JSON body") };
+    }
+    return { ok: true, data: parsed };
+  } catch {
+    return { ok: false, response: ApiResponse.error("Bad Request", 400, "Invalid JSON body") };
+  }
+}
+
+
+
+export function createErrorHandler() {
+  return async (err: unknown, _c: { req: { raw: Request } }): Promise<Response> => {
+    console.error("Unhandled error:", err);
+    return ApiResponse.error("Internal Server Error", 500, "Internal server error");
+  };
+}
+
+
+
+
+
 export function formatDate(dateStr: string | null | undefined): string | null {
   if (!dateStr) return null;
 
-  // 如果已经是ISO格式或包含T，直接返回
+
   if (dateStr.includes('T')) return dateStr;
 
-  // 处理SQLite日期时间格式: YYYY-MM-DD HH:MM:SS
-  // 替换空格为T，添加Z表示UTC
+
+
   return dateStr.replace(' ', 'T') + 'Z';
 }

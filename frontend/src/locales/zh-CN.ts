@@ -18,6 +18,8 @@ export default {
     add: '添加',
     create: '创建',
     search: '搜索',
+    allApplications: '所有应用',
+    allPriorities: '所有优先级',
     actions: '操作',
     confirm: '确认',
     success: '成功',
@@ -38,6 +40,11 @@ export default {
     addSuccess: '添加成功',
     switchLanguage: '切换语言',
     languageSwitched: '语言已切换',
+    switchTheme: '切换主题',
+    theme: '主题',
+    themeLight: '浅色',
+    themeDark: '深色',
+    themeAuto: '跟随系统',
     unknown: '未知',
     never: '从未',
     database: '数据库',
@@ -98,6 +105,7 @@ export default {
     confirmPassword: '确认密码',
     initToken: '初始化令牌',
     submit: '初始化系统',
+    success: '初始化成功，正在跳转到登录页...',
     error: {
       passwordMismatch: '两次输入的密码不一致',
       passwordTooShort: '密码长度至少为8位',
@@ -116,9 +124,23 @@ export default {
     viewAll: '查看全部',
     noMessages: '暂无消息'
   },
+  notFound: {
+    title: '页面不存在',
+    description: '你访问的地址不存在或已被移动。',
+    backToDashboard: '返回首页'
+  },
+  connection: {
+    connected: '已连接',
+    connecting: '连接中...',
+    disconnected: '连接已断开',
+    reconnect: '重新连接',
+    lastConnected: '最后连接：{time}'
+  },
   messages: {
     title: '消息管理',
     searchPlaceholder: '搜索消息...',
+    clearSearch: '清除搜索',
+    resetFilters: '重置筛选',
     noMessages: '暂无消息',
     messagePriority: '优先级',
     application: '应用',
@@ -137,6 +159,11 @@ export default {
     deleteMessage: '删除消息',
     loadMore: '加载更多',
     noMoreMessages: '没有更多消息',
+    editorLoadFailed: '编辑器加载失败',
+    loadApplicationsFailed: '加载应用列表失败',
+    fetchError: '加载消息失败',
+    loadMoreFailed: '加载更多消息失败',
+    deleteFailed: '删除消息失败',
     loadingMessages: '正在加载消息...',
     emptyDescription: '当应用发送通知时，消息将显示在此处。'
     , sendNotification: '发送通知'
@@ -161,7 +188,30 @@ export default {
     priorityEmergency: '紧急',
     enableBrowserNotifications: '启用浏览器通知',
     enableBrowserNotificationsDescription: '在浏览器中接收新消息通知，即使页面不在活动状态也能收到提醒。',
-    dismiss: '忽略'
+    dismiss: '忽略',
+    advancedOptions: '高级选项',
+    codeCopy: '复制',
+    copied: '已复制',
+    codeFormat: '格式化',
+    previewRender: '渲染视图',
+    backToEdit: '返回编辑',
+    filterTags: '过滤标签',
+    removeTag: '点击移除',
+    tagPlaceholder: '输入标签，按回车添加',
+    tagHint: '仅支持字母、数字、连字符和下划线',
+    tagHistory: '历史标签',
+    clickToAdd: '点击添加',
+    invalidTagFormat: '标签格式无效',
+    tooManyTags: '最多添加10个标签',
+    enableNotifications: '启用通知',
+    messageDetail: '消息详情',
+    messageId: '消息ID',
+    applicationId: '应用ID',
+    messageDate: '日期',
+    extrasData: '扩展数据',
+    noTitle: '（无标题）',
+    unknownApplication: '未知应用',
+    applicationNotFound: '应用不存在'
   },
   applications: {
     title: '应用管理',
@@ -194,7 +244,12 @@ export default {
     uploadIconError: '上传图标失败',
     iconDeleted: '图标删除成功！',
     deleteIconError: '删除图标失败',
-    deleteConfirmWithName: '确定要删除应用 "{name}" 的图标吗？'
+    deleteIconConfirm: '确定要删除应用图标吗？',
+    deleteConfirmWithName: '确定要删除应用 "{name}" 的图标吗？',
+
+    regenerateToken: '重新生成 Token',
+    regenerated: 'Token 已重新生成，请立即复制保存。',
+    regenerateFailed: '重新生成 Token 失败'
   },
   clients: {
     title: '客户端管理',
@@ -218,7 +273,36 @@ export default {
     lastUsed: '上次使用',
     deleteConfirm: '确定要删除此客户端吗？',
     deleteSuccess: '客户端删除成功！',
-    deleteError: '删除客户端失败：{error}'
+    deleteError: '删除客户端失败：{error}',
+    editTitle: '编辑客户端',
+    createTitle: '创建客户端',
+    creating: '创建中...',
+    createError: '创建客户端失败：{error}',
+    nameRequired: '请输入名称',
+    update: '更新',
+    updating: '更新中...',
+    updateError: '更新客户端失败：{error}',
+
+    id: 'ID',
+    platform: '平台',
+    deviceModel: '设备型号',
+    deviceUid: '设备标识',
+    tokenStatus: '令牌状态',
+    appVersion: '应用版本',
+    elevatedUntil: '提权有效期',
+    unknown: '未知',
+
+    status: {
+      active: '正常',
+      inactive: '未激活',
+      invalid: '无效',
+      expired: '已过期'
+    },
+
+    createdTitle: '客户端创建成功',
+    tokenLabel: '客户端令牌',
+    tokenHint: '请立即复制并妥善保存此 Token，它只显示这一次，且不再随客户端列表返回。',
+    done: '完成'
   },
   users: {
     title: '用户管理',
@@ -302,6 +386,27 @@ export default {
     nameRequired: '名称为必填项',
     updateError: '更新应用失败'
   },
+  createApplication: {
+    title: '创建应用',
+    name: '名称',
+    description: '描述',
+    defaultPriority: '默认优先级',
+    cancel: '取消',
+    create: '创建',
+    creating: '创建中...',
+    namePlaceholder: '例如：通知应用',
+    descriptionPlaceholder: '可选描述',
+    priorityPlaceholder: '0-3',
+    nameRequired: '名称为必填项',
+    createError: '创建应用失败',
+
+    createdTitle: '应用创建成功',
+    tokenLabel: '应用令牌',
+    tokenHint: '请立即复制并妥善保存此 Token，它只显示这一次。',
+    copyToken: '复制令牌',
+    tokenCopied: '令牌已复制到剪贴板！',
+    done: '完成'
+  },
   applicationDetail: {
     loading: '正在加载应用详情...',
     errorTitle: '加载应用出错',
@@ -316,6 +421,14 @@ export default {
     deleteApplication: '删除应用',
     tokenTitle: '应用令牌',
     tokenDescription: '使用此令牌通过 REST API 向该应用发送消息。',
+    regenerateToken: '重新生成 Token',
+    regenerateWarning: '确定要重新生成 Token 吗？旧 Token 将立即失效，所有使用方都需要更新为新 Token。',
+    regenerated: 'Token 已重新生成，请立即复制保存。',
+    regenerateFailed: '重新生成 Token 失败',
+
+    tokenUnknownHint: '出于安全考虑，令牌不再随详情接口返回，仅在创建或重新生成时显示一次；如需查看，请重新生成。',
+    showToken: '显示令牌',
+    hideToken: '隐藏令牌',
     recentMessages: '最近消息',
     viewAllMessages: '查看全部消息',
     loadingMessages: '正在加载消息...',
@@ -374,7 +487,7 @@ export default {
     loadError: '加载插件失败',
     addPlugin: '添加插件',
     type: '插件类型',
-    namePlaceholder: '例如：Webhooker-Slack',
+    namePlaceholder: '例如：My-Notifier',
     createSuccess: '插件创建成功',
     createError: '创建插件失败',
     deleteConfirm: '确定要删除 "{name}" 吗？',
@@ -396,6 +509,28 @@ export default {
     configPlaceholder: '输入 YAML 配置...',
     updateSucceeded: '插件更新成功',
     updateError: '更新插件失败'
+  },
+  pluginDetail: {
+    loadingDetails: '正在加载插件详情...',
+    retry: '重试',
+    modulePath: '模块路径',
+    configuration: '配置',
+    noConfig: '该插件没有配置。',
+    pluginDisplay: '插件展示',
+    loadingDisplay: '正在加载插件展示...',
+    noDisplay: '该插件未提供展示内容。',
+    executionLogs: '执行日志',
+    loadingLogs: '正在加载日志...',
+    noLogs: '暂无日志。',
+    logTime: '时间',
+    logEvent: '事件',
+    logStatus: '状态',
+    logDuration: '耗时',
+    logError: '错误',
+    failure: '失败',
+    notFound: '插件不存在',
+    configSaved: '配置保存成功',
+    configSaveFailed: '配置保存失败'
   },
   notificationSettings: {
     title: '通知设置',
@@ -438,9 +573,20 @@ export default {
   settings: {
     title: '设置',
     description: '管理您的账户和应用程序设置',
-    notifications: '通知设置'
+    notifications: '通知设置',
+    display: '显示',
+    renderMarkdown: '消息渲染',
+    renderMarkdownDesc: '在消息详情弹窗中自动检测 Markdown、数学公式与代码并渲染为富文本；关闭后详情按纯文本显示'
+  },
+  elevate: {
+    title: '需要确认密码',
+    message: '为执行该敏感操作，请输入当前密码',
+    passwordLabel: '当前密码',
+    confirm: '确认',
+    cancel: '取消',
+    wrongPassword: '密码错误，请重试',
+    relogin: '会话信息缺失，请退出后重新登录',
+    attemptsExhausted: '尝试次数过多，操作已取消',
+    requestFailed: '身份验证失败，请重试'
   }
 }
-
-
-

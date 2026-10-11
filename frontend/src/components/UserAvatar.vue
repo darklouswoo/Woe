@@ -19,6 +19,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { User } from '@/types'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 interface Props {
   user: User
@@ -46,13 +47,7 @@ const initials = computed(() => {
   return name.charAt(0).toUpperCase()
 })
 
-const avatarSrc = computed(() => {
-  if (!props.user.avatar) return ''
-  if (props.user.avatar.startsWith('http') || props.user.avatar.startsWith('/')) {
-    return props.user.avatar
-  }
-  return props.user.avatar
-})
+const avatarSrc = computed(() => resolveMediaUrl(props.user.avatar))
 
 const handleImageError = () => {
   imageError.value = true
@@ -74,7 +69,7 @@ const handleClick = () => {
   border-radius: 50%;
   overflow: hidden;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  color: var(--color-text-inverse);
   font-weight: 600;
   transition: all 0.2s;
 }
@@ -125,8 +120,8 @@ const handleClick = () => {
   bottom: 120%;
   left: 50%;
   transform: translateX(-50%);
-  background-color: #1f2937;
-  color: white;
+  background-color: var(--color-text-primary);
+  color: var(--color-text-inverse);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -152,6 +147,6 @@ const handleClick = () => {
   left: 50%;
   transform: translateX(-50%);
   border: 6px solid transparent;
-  border-top-color: #1f2937;
+  border-top-color: var(--color-text-primary);
 }
 </style>

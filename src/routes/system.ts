@@ -1,11 +1,23 @@
+
+
+
+
+
+
+
+
+
 import { Hono } from "hono";
 import { HonoEnv } from "../types/hono.ts";
 import { createDrizzle } from "../drizzle/index.ts";
 import { ApiResponse } from "../utils/response.ts";
+import { buildInfo } from "../generated/buildInfo.ts";
+import { isRegistrationEnabled } from "../utils/registrationConfig.ts";
 
 const system = new Hono<HonoEnv>();
 
-// GET /health
+
+
 system.get("/health", async (c) => {
   try {
     const drizzle = createDrizzle(c.env.DB);
@@ -28,16 +40,30 @@ system.get("/health", async (c) => {
   }
 });
 
-// GET /version
-system.get("/version", (c) => {
+
+system.get("/version", () => {
   return ApiResponse.json({
-    version: c.env.VERSION || "1.0.0",
-    commit: "unknown",
-    buildDate: new Date().toISOString(),
+    version: buildInfo.version,
+    commit: buildInfo.commit,
+    buildDate: buildInfo.buildDate,
   });
 });
 
-// GET /status
+
+system.get("/gotifyinfo", (c) => {
+
+
+  return ApiResponse.json({
+    version: buildInfo.version,
+    register: isRegistrationEnabled(c.env.REGISTRATION),
+    localAuth: true,
+    oidc: false,
+    oidcIdpName: "",
+    oidcAutoRedirect: false,
+  });
+});
+
+
 system.get("/status", async (c) => {
   try {
     const drizzle = createDrizzle(c.env.DB);
@@ -50,14 +76,14 @@ system.get("/status", async (c) => {
 
     return ApiResponse.json({
       initialized: isInitialized,
-      version: c.env.VERSION || "1.0.0",
+      version: buildInfo.version,
       health: dbStatus,
     });
   } catch (error) {
     console.error("Status check failed:", error);
     return ApiResponse.json({
       initialized: false,
-      version: c.env.VERSION || "1.0.0",
+      version: buildInfo.version,
       health: "unknown",
     });
   }

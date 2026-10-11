@@ -1,156 +1,160 @@
-/**
- * Integration tests for Plugin API
- * These tests verify that all plugin endpoints work correctly
- *
- * To run these tests, you need to:
- * 1. Apply the migration: wrangler d1 execute woe_db --file=migrations/0003_create_plugin_configs_table.sql
- * 2. Ensure you have an admin user and valid token
- * 3. Run the tests: npm test
- */
+jest.mock('file-type', () => ({
+  fileTypeFromBuffer: jest.fn()
+}), { virtual: true })
 
 import { PluginHandlers } from "../../src/handlers/pluginHandlers";
 
-// Mock D1 Database for testing
-const createMockDb = () => ({
-  prepare: jest.fn().mockReturnThis(),
-  bind: jest.fn().mockReturnThis(),
-  all: jest.fn().mockResolvedValue({ results: [] }),
-  first: jest.fn().mockResolvedValue(null),
-  run: jest.fn().mockResolvedValue({ changes: 1 }),
-});
+function createDrizzleMock(options: {
+  selectGetResults?: unknown[];
+  orderByResults?: unknown[];
+} = {}) {
+  const selectGet = jest.fn();
+  for (const result of options.selectGetResults ?? []) {
+    selectGet.mockResolvedValueOnce(result);
+  }
+
+  const orderBy = jest.fn();
+  for (const result of options.orderByResults ?? []) {
+    orderBy.mockResolvedValueOnce(result);
+  }
+
+  return {
+    select: jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          get: selectGet,
+          orderBy
+        }))
+      }))
+    })),
+    update: jest.fn(() => ({
+      set: jest.fn(() => ({
+        where: jest.fn().mockResolvedValue({ meta: { changes: 1 } })
+      }))
+    })),
+    __selectGet: selectGet,
+    __orderBy: orderBy
+  };
+}
 
 describe("PluginHandlers", () => {
-  let mockDb: any;
-  let pluginHandlers: PluginHandlers;
-
-  beforeEach(() => {
-    mockDb = createMockDb();
-    pluginHandlers = new PluginHandlers(mockDb);
-  });
-
-  describe("getAllPlugins", () => {
-    it("should return array of plugins for user", async () => {
-      mockDb.all.mockResolvedValue({
-        results: [{
+  test("getAllPlugins returns mapped plugin list for admin", async () => {
+    const drizzle = createDrizzleMock({
+      orderByResults: [[
+        {
           id: 1,
           userId: 1,
           name: "Test Plugin",
           token: "P12345",
-          modulePath: "test/plugin",
+          modulePath: "builtin/displayer",
           enabled: 1,
-          capabilities: '["webhook"]',
-          author: "test",
-          license: "MIT",
-          website: "https://example.com"
-        }]
-      });
-
-      const response = await pluginHandlers.getAllPlugins(1);
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(Array.isArray(data)).toBe(true);
-      expect(data[0].name).toBe("Test Plugin");
-      expect(data[0].enabled).toBe(true);
+          icon: null,
+          configYaml: ""
+        }
+      ]]
     });
+    const pluginHandlers = new PluginHandlers(drizzle as any);
+
+    const response = await pluginHandlers.getAllPlugins(1, true);
+    const data = await response.json() as any[];
+
+    expect(response.status).toBe(200);
+    expect(data).toHaveLength(1);
+    expect(data[0].name).toBe("Test Plugin");
+    expect(data[0].enabled).toBe(true);
+    expect(data[0].modulePath).toBe("builtin/displayer");
   });
 
-  describe("getPluginConfig", () => {
-    it("should return YAML config for plugin", async () => {
-      mockDb.first.mockResolvedValue({
-        config_yaml: "delay: 1000\ntarget_url: http://localhost:8080\n",
-        module_path: "test/plugin"
-      });
-
-      const response = await pluginHandlers.getPluginConfig(1, "1");
-
-      expect(response.status).toBe(200);
-      expect(response.headers.get("Content-Type")).toContain("application/x-yaml");
+  test("getPluginConfig returns YAML with correct content type", async () => {
+    const drizzle = createDrizzleMock({
+      selectGetResults: [
+        {
+          configYaml: "messageFormat: \"[#{NOW}] #{APP_NAME}: #{MESSAGE}\"\nshowTitle: true\n",
+          modulePath: "builtin/displayer"
+        }
+      ]
     });
+    const pluginHandlers = new PluginHandlers(drizzle as any);
 
-    it("should return 404 for non-existent plugin", async () => {
-      mockDb.first.mockResolvedValue(null);
+    const response = await pluginHandlers.getPluginConfig(1, "1", true);
 
-      const response = await pluginHandlers.getPluginConfig(1, "999");
-
-      expect(response.status).toBe(404);
-    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("application/x-yaml");
+    await expect(response.text()).resolves.toContain("messageFormat");
   });
 
-  describe("updatePluginConfig", () => {
-    it("should update plugin config", async () => {
-      mockDb.first.mockResolvedValue({ id: 1 });
-      mockDb.run.mockResolvedValue({ changes: 1 });
-
-      const mockRequest = {
-        text: jest.fn().mockResolvedValue("delay: 2000\n"),
-      } as any;
-
-      const response = await pluginHandlers.updatePluginConfig(1, "1", mockRequest);
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(data).toEqual({});
+  test("updatePluginConfig stores YAML when content type is correct", async () => {
+    const drizzle = createDrizzleMock({
+      selectGetResults: [
+        { id: 1, modulePath: "builtin/displayer" }
+      ]
     });
+    const pluginHandlers = new PluginHandlers(drizzle as any);
+
+    const request = new Request("http://localhost/plugin/1/config", {
+      method: "POST",
+      headers: { "content-type": "application/x-yaml" },
+      body: "messageFormat: \"updated\"\n"
+    });
+
+    const response = await pluginHandlers.updatePluginConfig(1, "1", request, true);
+    const data = await response.json() as Record<string, never>;
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({});
+    expect(drizzle.update).toHaveBeenCalled();
   });
 
-  describe("enablePlugin", () => {
-    it("should enable a plugin", async () => {
-      mockDb.run.mockResolvedValue({ changes: 1 });
-
-      const response = await pluginHandlers.enablePlugin(1, "1");
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(data).toEqual({});
+  test("enablePlugin enables a plugin for admin", async () => {
+    const drizzle = createDrizzleMock({
+      selectGetResults: [
+        { id: 1, modulePath: "builtin/displayer" }
+      ]
     });
+    const pluginHandlers = new PluginHandlers(drizzle as any);
+
+    const response = await pluginHandlers.enablePlugin(1, "1", true);
+    const data = await response.json() as Record<string, never>;
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({});
+    expect(drizzle.update).toHaveBeenCalled();
   });
 
-  describe("disablePlugin", () => {
-    it("should disable a plugin", async () => {
-      mockDb.run.mockResolvedValue({ changes: 1 });
-
-      const response = await pluginHandlers.disablePlugin(1, "1");
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(data).toEqual({});
+  test("disablePlugin disables a plugin for admin", async () => {
+    const drizzle = createDrizzleMock({
+      selectGetResults: [
+        { id: 1, modulePath: "builtin/displayer" }
+      ]
     });
+    const pluginHandlers = new PluginHandlers(drizzle as any);
+
+    const response = await pluginHandlers.disablePlugin(1, "1", true);
+    const data = await response.json() as Record<string, never>;
+
+    expect(response.status).toBe(200);
+    expect(data).toEqual({});
+    expect(drizzle.update).toHaveBeenCalled();
   });
 
-  describe("getPluginDisplay", () => {
-    it("should return display info for plugin", async () => {
-      mockDb.first.mockResolvedValue({
-        module_path: "test/plugin",
-        enabled: 1,
-        config_yaml: "delay: 1000"
-      });
-
-      const response = await pluginHandlers.getPluginDisplay(1, "1");
-      const data = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(typeof data).toBe("string");
-      expect(data).toContain("Plugin ID: 1");
+  test("getPluginDisplay returns 403 for disabled plugin", async () => {
+    const drizzle = createDrizzleMock({
+      selectGetResults: [
+        {
+          id: 1,
+          name: "Test Plugin",
+          modulePath: "builtin/displayer",
+          enabled: 0,
+          configYaml: ""
+        }
+      ]
     });
-  });
-});
+    const pluginHandlers = new PluginHandlers(drizzle as any);
 
-describe("Plugin API endpoints with YAML support", () => {
-  describe("getPluginConfig", () => {
-    it("should return YAML content type header", async () => {
-      const mockDb = createMockDb();
-      mockDb.first.mockResolvedValue({
-        config_yaml: "setting: value\nanother: value2\n",
-        module_path: "test/plugin"
-      });
+    const response = await pluginHandlers.getPluginDisplay(1, "1");
+    const data = await response.json() as { errorCode: number };
 
-      const pluginHandlers = new PluginHandlers(mockDb);
-      const response = await pluginHandlers.getPluginConfig(1, "1");
-
-      expect(response.headers.get("Content-Type")).toContain("application/x-yaml");
-    });
+    expect(response.status).toBe(403);
+    expect(data.errorCode).toBe(403);
   });
 });
-
-export {};

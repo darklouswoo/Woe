@@ -14,14 +14,25 @@
             <h3>{{ client.name }}</h3>
           </div>
           <div class="client-info">
-            <p class="client-token">
-              <strong>{{ $t('common.token') }}:</strong>
-              <code>{{ client.token.substring(0, 8) }}...{{ client.token.substring(client.token.length - 4) }}</code>
+
+
+            <p class="client-detail">
+              <strong>{{ $t('clients.platform') }}:</strong>
+              <span class="platform-badge">{{ getPlatformText(client.platform) }}</span>
             </p>
-            <p class="client-last-ping">{{ $t('clients.lastUsed') }}: {{ formatDate(client.lastUsed || '') }}</p>
+            <p v-if="client.deviceModel" class="client-detail">
+              <strong>{{ $t('clients.deviceModel') }}:</strong>
+              <span>{{ client.deviceModel }}</span>
+            </p>
+            <p class="client-detail">
+              <strong>{{ $t('clients.tokenStatus') }}:</strong>
+              <span class="status-tag" :class="`status-${client.tokenStatus || 'active'}`">
+                {{ $t(`clients.status.${client.tokenStatus || 'active'}`) }}
+              </span>
+            </p>
+            <p class="client-last-ping">{{ $t('clients.lastUsed') }}: {{ formatDate(client.lastUsed || '') || $t('common.never') }}</p>
           </div>
           <div class="client-actions">
-            <button @click="copyToken(client.token)" class="copy-btn">{{ $t('clients.copyToken') }}</button>
             <button @click="editClient(client)" class="edit-btn">{{ $t('common.edit') }}</button>
             <button @click="deleteClient(client.id)" class="delete-btn">{{ $t('common.delete') }}</button>
           </div>
@@ -56,10 +67,13 @@ import CreateClientModal from '@/components/CreateClientModal.vue'
 import EditClientModal from '@/components/EditClientModal.vue'
 import { showSuccess, showError } from '@/utils/errorHandler'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
+import { formatDate } from '@/utils/datetime'
+import { useElevatedAction, isElevationCancelled } from '@/composables/useElevatedAction'
 import type { Client } from '@/types'
 
 const { t } = useI18n()
 const { confirm: confirmDialog } = useConfirmDialog()
+const { withElevation } = useElevatedAction()
 
 const clients = ref<Client[]>([])
 const loading = ref(true)
@@ -67,9 +81,11 @@ const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const editingClient = ref<Client | null>(null)
 
-const formatDate = (dateString: string) => {
-  if (!dateString) return t('common.never')
-  return new Date(dateString).toLocaleString()
+
+const getPlatformText = (platform?: string): string => {
+  if (!platform) return t('clients.unknown')
+  if (platform === 'web') return 'Web'
+  return platform
 }
 
 const loadClients = async () => {
@@ -88,16 +104,6 @@ const reloadClients = async () => {
   await loadClients()
 }
 
-const copyToken = async (token: string) => {
-  try {
-    await navigator.clipboard.writeText(token)
-    showSuccess(t('clients.tokenCopied'))
-  } catch (err) {
-    console.error('Failed to copy token:', err)
-    showError(err as Error, t('common.unknownError'))
-  }
-}
-
 const editClient = (client: Client) => {
   editingClient.value = client
   showEditModal.value = true
@@ -111,15 +117,18 @@ const deleteClient = async (id: number) => {
     cancelText: t('common.confirmDialog.cancelButton'),
     type: 'danger'
   })
-  
+
   if (confirmed) {
     try {
-      await clientApi.deleteClient(id)
+
+      await withElevation(() => clientApi.deleteClient(id))
       showSuccess(t('clients.deleteSuccess'))
       await reloadClients()
     } catch (err: any) {
-      console.error('Failed to delete client:', err)
-      showError(err, t('clients.deleteError'))
+      if (!isElevationCancelled(err)) {
+        console.error('Failed to delete client:', err)
+        showError(err, t('clients.deleteError'))
+      }
     }
   }
 }
@@ -145,27 +154,27 @@ onMounted(() => {
 .page-title {
   font-size: 2rem;
   font-weight: bold;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .create-btn {
   padding: 0.5rem 1rem;
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .create-btn:hover {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .loading, .empty-state {
   text-align: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 3rem;
   font-size: 1rem;
 }
@@ -177,10 +186,10 @@ onMounted(() => {
 }
 
 .client-card {
-  background: white;
+  background: var(--color-bg-primary);
   padding: 1.5rem;
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -195,14 +204,14 @@ onMounted(() => {
 .client-header h3 {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .client-type {
   padding: 0.25rem 0.5rem;
-  background: #f3f4f6;
-  color: #6b7280;
+  background: var(--color-bg-hover);
+  color: var(--color-text-tertiary);
   border-radius: 0.25rem;
   font-size: 0.75rem;
   font-weight: 500;
@@ -214,24 +223,53 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
-.client-token {
+.client-detail {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-secondary);
   margin: 0;
-  word-break: break-all;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.client-token code {
-  background: #f3f4f6;
-  padding: 0.125rem 0.25rem;
+.platform-badge {
+  padding: 0.125rem 0.5rem;
+  background: var(--color-bg-hover);
   border-radius: 0.25rem;
-  font-family: 'Courier New', monospace;
-  font-size: 0.8em;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-tag {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-active {
+  background: rgba(34, 197, 94, 0.1);
+  color: rgb(34, 197, 94);
+}
+
+.status-inactive {
+  background: rgba(245, 158, 11, 0.12);
+  color: rgb(217, 119, 6);
+}
+
+.status-invalid {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgb(239, 68, 68);
+}
+
+.status-expired {
+  background: rgba(156, 163, 175, 0.1);
+  color: rgb(156, 163, 175);
 }
 
 .client-last-ping {
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   margin: 0;
 }
 
@@ -241,49 +279,34 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.copy-btn {
-  padding: 0.375rem 0.75rem;
-  background-color: #6366f1;
-  color: white;
-  border: none;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-size: 0.875rem;
-  transition: background-color 0.2s;
-}
-
-.copy-btn:hover {
-  background-color: #4f46e5;
-}
-
 .edit-btn {
   padding: 0.375rem 0.75rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .edit-btn:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .delete-btn {
   padding: 0.375rem 0.75rem;
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .delete-btn:hover {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 @media (max-width: 768px) {

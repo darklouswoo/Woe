@@ -33,9 +33,9 @@ import { useI18n } from 'vue-i18n'
 import BaseModal from './BaseModal.vue'
 import { applicationApi } from '@/services/api'
 
-/**
- * 获取 i18n 翻译函数
- */
+
+
+
 const { t } = useI18n()
 
 const props = defineProps<{
@@ -76,14 +76,35 @@ const onSubmit = async () => {
 </script>
 
 <style scoped>
-.title { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.title { margin: 0; font-size: 1.125rem; font-weight: 600; color: var(--color-text-primary); }
 .form { display: flex; flex-direction: column; gap: 0.75rem; }
 .field { display: flex; flex-direction: column; gap: 0.375rem; }
-.field span { color: #374151; font-size: 0.875rem; }
-input, textarea { border: 1px solid #e5e7eb; border-radius: 0.375rem; padding: 0.5rem; font-size: 0.875rem; }
+.field span { color: var(--color-text-secondary); font-size: 0.875rem; }
+input, textarea {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  font-size: 0.875rem;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: var(--theme-transition);
+}
+input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+}
 textarea { min-height: 80px; resize: vertical; }
-.error { color: #b91c1c; font-size: 0.875rem; }
-.btn { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; cursor: pointer; background: #e5e7eb; }
-.btn.primary { background: #3b82f6; color: white; }
+.error { color: var(--color-error); font-size: 0.875rem; }
+.btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  background: var(--color-bg-active);
+  color: var(--color-text-secondary);
+  transition: var(--theme-transition);
+}
+.btn.primary { background: var(--color-primary); color: var(--color-text-inverse); }
+.btn.primary:hover { background: var(--color-primary-hover); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

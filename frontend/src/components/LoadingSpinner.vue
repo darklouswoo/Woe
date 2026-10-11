@@ -7,7 +7,7 @@
       <div class="dot"></div>
     </div>
     <div class="spinner-pulse" v-else-if="variant === 'pulse'"></div>
-    
+
     <div v-if="text" class="spinner-text">{{ text }}</div>
   </div>
 </template>
@@ -47,13 +47,13 @@ withDefaults(defineProps<Props>(), {
   --spinner-size: 48px;
 }
 
-/* Circle Spinner */
+
 .spinner-circle {
   width: var(--spinner-size);
   height: var(--spinner-size);
-  border: 3px solid rgba(59, 130, 246, 0.2);
+  border: 3px solid var(--color-primary-light);
   border-radius: 50%;
-  border-top-color: #3b82f6;
+  border-top-color: var(--color-primary);
   animation: spin 1s ease-in-out infinite;
 }
 
@@ -61,7 +61,7 @@ withDefaults(defineProps<Props>(), {
   to { transform: rotate(360deg); }
 }
 
-/* Dots Spinner */
+
 .spinner-dots {
   display: flex;
   gap: 0.25rem;
@@ -70,7 +70,7 @@ withDefaults(defineProps<Props>(), {
 .dot {
   width: calc(var(--spinner-size) / 4);
   height: calc(var(--spinner-size) / 4);
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
   border-radius: 50%;
   animation: bounce 1.4s ease-in-out infinite both;
 }
@@ -87,11 +87,11 @@ withDefaults(defineProps<Props>(), {
   }
 }
 
-/* Pulse Spinner */
+
 .spinner-pulse {
   width: var(--spinner-size);
   height: var(--spinner-size);
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
   border-radius: 50%;
   animation: pulse 1.5s ease-in-out infinite;
 }
@@ -109,7 +109,7 @@ withDefaults(defineProps<Props>(), {
 
 .spinner-text {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   text-align: center;
 }
 </style>

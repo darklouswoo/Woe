@@ -1,4 +1,8 @@
-// Woe API Types - Based on Gotify API v2.0.2
+
+
+
+
+
 
 export interface User {
   id: number;
@@ -9,29 +13,57 @@ export interface User {
   description?: string;
   admin: boolean;
   disabled: boolean;
+
+  createdAt: string | null;
+
+  clientId?: number;
+
+  elevatedUntil?: string;
 }
+
 
 export interface UserWithPass extends User {
   pass: string;
 }
 
+
 export interface Application {
   id: number;
   token: string;
   name: string;
+  sortKey: string;
   description: string;
   internal: boolean;
   image: string;
   lastUsed: string | null;
   defaultPriority: number;
+
+  createdAt: string | null;
 }
+
 
 export interface Client {
   id: number;
   token: string;
   name: string;
+  platform?: string;
+  deviceUid?: string | null;
+  deviceToken?: string | null;
+  tokenUpdatedAt?: string | null;
+  tokenStatus?: "active" | "inactive" | "invalid" | "expired";
+  appVersion?: string | null;
+  deviceModel?: string | null;
   lastUsed: string | null;
+
+  elevatedUntil?: string | null;
+
+  expiresAfterInactivitySeconds: number;
+
+  expiresAt?: string;
+
+  createdAt: string | null;
 }
+
 
 export interface Message {
   id: number;
@@ -43,6 +75,7 @@ export interface Message {
   extras?: Record<string, any>;
 }
 
+
 export interface Paging {
   size: number;
   since: number;
@@ -50,10 +83,12 @@ export interface Paging {
   next?: string;
 }
 
+
 export interface PagedMessages {
   paging: Paging;
   messages: Message[];
 }
+
 
 export interface PluginConf {
   id: number;
@@ -67,12 +102,16 @@ export interface PluginConf {
   license?: string;
   website?: string;
   configExample?: string;
+
+  createdAt: string | null;
 }
+
 
 export interface Health {
   health: string;
   database: string;
 }
+
 
 export interface VersionInfo {
   version: string;
@@ -80,19 +119,23 @@ export interface VersionInfo {
   buildDate: string;
 }
 
+
 export interface ErrorResponse {
   error: string;
   errorCode: number;
   errorDescription: string;
 }
 
+
 export interface Env {
   DB: D1Database;
+  PUSH_QUEUE?: Queue;
   R2?: R2Bucket;
+  IMAGES?: ImagesBinding;
   ASSETS?: Fetcher;
-  VERSION?: string;
+  MESSAGE_STREAM_HUB?: DurableObjectNamespace;
   ENVIRONMENT?: string;
   DEFAULT_ADMIN_USER?: string;
   DEFAULT_ADMIN_PASSWORD?: string;
-  REGISTRATION?: string; // Allow user registration (true/false), default false
+  REGISTRATION?: string | boolean;
 }

@@ -17,7 +17,7 @@
     </div>
 
     <div v-else class="settings-content">
-      <!-- Permission Status -->
+
       <div class="setting-group">
         <div class="setting-item">
           <div class="setting-info">
@@ -43,8 +43,8 @@
             <p class="setting-description">{{ $t('notificationSettings.requestPermissionDescription') }}</p>
           </div>
           <div class="setting-control">
-            <button 
-              @click="requestPermission" 
+            <button
+              @click="requestPermission"
               :disabled="requestingPermission"
               class="btn btn-primary"
             >
@@ -62,10 +62,10 @@
         </div>
       </div>
 
-      <!-- Notification Settings -->
+
       <div v-if="permission === 'granted'" class="setting-group">
         <h3 class="group-title">{{ $t('notificationSettings.settings') }}</h3>
-        
+
         <div class="setting-item">
           <div class="setting-info">
             <h3 class="setting-label">{{ $t('notificationSettings.enableNotifications') }}</h3>
@@ -73,8 +73,8 @@
           </div>
           <div class="setting-control">
             <label class="toggle-switch">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 v-model="localSettings.enabled"
                 @change="updateSettings"
               />
@@ -90,8 +90,8 @@
           </div>
           <div class="setting-control">
             <label class="toggle-switch">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 v-model="localSettings.sound"
                 @change="updateSettings"
                 :disabled="!localSettings.enabled"
@@ -108,8 +108,8 @@
           </div>
           <div class="setting-control">
             <label class="toggle-switch">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 v-model="localSettings.requireInteraction"
                 @change="updateSettings"
                 :disabled="!localSettings.enabled"
@@ -126,8 +126,8 @@
           </div>
           <div class="setting-control">
             <label class="toggle-switch">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 v-model="localSettings.showOnlyWhenPageHidden"
                 @change="updateSettings"
                 :disabled="!localSettings.enabled"
@@ -143,7 +143,7 @@
             <p class="setting-description">{{ $t('notificationSettings.priorityDescription') }}</p>
           </div>
           <div class="setting-control">
-            <select 
+            <select
               v-model="localSettings.priority"
               @change="updateSettings"
               :disabled="!localSettings.enabled"
@@ -157,17 +157,17 @@
         </div>
       </div>
 
-      <!-- Test Notification -->
+
       <div v-if="permission === 'granted' && localSettings.enabled" class="setting-group">
         <h3 class="group-title">{{ $t('notificationSettings.test') }}</h3>
-        
+
         <div class="setting-item">
           <div class="setting-info">
             <h3 class="setting-label">{{ $t('notificationSettings.testNotification') }}</h3>
             <p class="setting-description">{{ $t('notificationSettings.testNotificationDescription') }}</p>
           </div>
           <div class="setting-control">
-            <button 
+            <button
               @click="sendTestNotification"
               :disabled="sendingTest"
               class="btn btn-secondary"
@@ -241,12 +241,12 @@ const sendTestNotification = async () => {
       tag: 'test-notification',
       forceShow: true
     })
-    
+
     if (success) {
-      // 显示成功提示
+
       errorHandler.showSuccess(t('notificationSettings.testSuccess'))
     } else {
-      // 显示失败提示
+
       errorHandler.showWarning(t('notificationSettings.testFailed'))
     }
   } catch (error) {
@@ -277,12 +277,12 @@ onMounted(() => {
 .settings-title {
   font-size: 1.5rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin-bottom: 0.5rem;
 }
 
 .settings-description {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
   line-height: 1.5;
 }
@@ -317,10 +317,10 @@ onMounted(() => {
 .group-title {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin-bottom: 1rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .setting-item {
@@ -328,7 +328,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   padding: 1rem 0;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--color-bg-hover);
 }
 
 .setting-item:last-child {
@@ -343,13 +343,13 @@ onMounted(() => {
 .setting-label {
   font-size: 1rem;
   font-weight: 500;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin-bottom: 0.25rem;
 }
 
 .setting-description {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   line-height: 1.4;
 }
 
@@ -400,7 +400,7 @@ onMounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #d1d5db;
+  background-color: var(--color-border-secondary);
   transition: 0.3s;
   border-radius: 24px;
 }
@@ -412,13 +412,13 @@ onMounted(() => {
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--color-text-inverse);
   transition: 0.3s;
   border-radius: 50%;
 }
 
 input:checked + .toggle-slider {
-  background-color: #3b82f6;
+  background-color: var(--color-primary);
 }
 
 input:checked + .toggle-slider:before {
@@ -426,29 +426,30 @@ input:checked + .toggle-slider:before {
 }
 
 input:disabled + .toggle-slider {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
   cursor: not-allowed;
 }
 
 .select-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
-  background-color: white;
+  background-color: var(--color-bg-primary);
   font-size: 0.875rem;
-  color: #1f2937;
+  color: var(--color-text-primary);
   min-width: 120px;
+  transition: var(--theme-transition);
 }
 
 .select-input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .select-input:disabled {
-  background-color: #f9fafb;
-  color: #6b7280;
+  background-color: var(--color-bg-tertiary);
+  color: var(--color-text-tertiary);
   cursor: not-allowed;
 }
 
@@ -466,22 +467,22 @@ input:disabled + .toggle-slider {
 }
 
 .btn-primary {
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .btn-secondary {
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .btn:disabled {
@@ -493,17 +494,17 @@ input:disabled + .toggle-slider {
   .notification-settings {
     padding: 1rem;
   }
-  
+
   .setting-item {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
   }
-  
+
   .setting-info {
     margin-right: 0;
   }
-  
+
   .setting-control {
     align-self: flex-end;
   }

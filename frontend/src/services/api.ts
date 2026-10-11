@@ -15,6 +15,7 @@ import type {
   ErrorResponse,
   UpdateUserProfile,
   ChangePasswordRequest,
+  AvailablePlugin,
 } from '@/types'
 import {
   ApiError,
@@ -26,38 +27,47 @@ import {
 } from '@/types'
 import { authService } from '@/services/auth'
 
-// 扩展AxiosRequestConfig类型以支持appId属性
-declare module 'axios' {
-  interface AxiosRequestConfig {
-    appId?: number
-  }
-}
-
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/',
   timeout: 10000,
 })
 
-// Request interceptor to add authentication
-api.interceptors.request.use((config) => {
-  return authService.applyAuth(config, config.url)
+
+
+
+
+
+
+export const logoutHttpClient = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/',
+  timeout: 10000,
 })
 
-// Response interceptor to handle errors
+
+api.interceptors.request.use((config) => {
+  const configured = authService.applyAuth(config, config.url)
+
+
+  configured.authSnapshot = {
+    revision: authService.getSessionRevision(),
+    clientToken: authService.getClientCredentialForRevocation(),
+  }
+  return configured
+})
+
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle authentication errors using authService
-    authService.handleAuthError(error)
 
-    // Handle 401 unauthorized
-    if (error.response?.status === 401) {
-      // Clear all authentication data
-      authService.clearAllAuth()
+
+    const isCurrentSessionAuthFailure = authService.handleAuthError(error)
+
+    if (error.response?.status === 401 && isCurrentSessionAuthFailure) {
       window.location.href = '/login'
     }
 
-    // Standardize error format according to API spec and create appropriate error class
+
     let apiError: ApiError
 
     if (error.response?.data) {
@@ -71,7 +81,7 @@ api.interceptors.response.use(
           'An error occurred while processing your request',
       }
 
-      // Create appropriate error class based on status code
+
       switch (error.response.status) {
         case 400:
           apiError = new ValidationError(errorData.errorDescription)
@@ -97,11 +107,11 @@ api.interceptors.response.use(
           )
       }
 
-      // Attach the original error response data
+
       apiError.responseData = error.response.data
       error.formattedError = errorData
     } else {
-      // Network error or other non-API error
+
       apiError = new ApiError(
         'Network Error',
         0,
@@ -110,14 +120,14 @@ api.interceptors.response.use(
       )
     }
 
-    // Attach the original axios error for debugging
+
     apiError.originalError = error
 
     return Promise.reject(apiError)
   }
 )
 
-// Development logging
+
 if (import.meta.env.DEV) {
   api.interceptors.request.use((config) => {
     console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`)
@@ -139,15 +149,25 @@ if (import.meta.env.DEV) {
 export default api
 
 export const authApi = {
-  // Login with basic auth
+
   login: (username: string, password: string) => {
     return api.get('/current/user', {
       auth: { username, password },
     })
   },
 
-  // Get current user info
+
   getCurrentUser: () => api.get<User>('/current/user'),
+
+
+
+
+
+
+  logout: (capturedToken: string) =>
+    logoutHttpClient.post('/auth/logout', undefined, {
+      headers: { 'X-Gotify-Key': capturedToken },
+    }),
 }
 
 export const userApi = {
@@ -164,7 +184,7 @@ export const userApi = {
   updateCurrentUserPassword: (passwordData: ChangePasswordRequest) =>
     api.post('/current/user/password', passwordData),
 
-  // User profile endpoints
+
   updateProfile: (id: number, data: UpdateUserProfile) =>
     api.put<User>(`/user/${id}/profile`, data),
 
@@ -179,20 +199,20 @@ export const userApi = {
   deleteAvatar: (id: number) =>
     api.delete(`/user/${id}/avatar`),
 
-  // Admin-only endpoints to get user details
+
   getUserApplications: (id: number) => api.get<Application[]>(`/user/${id}/applications`),
 
   getUserClients: (id: number) => api.get<Client[]>(`/user/${id}/clients`),
 
   getUserPlugins: (id: number) => api.get<Plugin[]>(`/user/${id}/plugins`),
 
-  // Plugin permissions (admin only)
+
   getPluginPermissions: (id: number) => api.get<string[]>(`/user/${id}/plugin-permissions`),
 
   updatePluginPermissions: (id: number, modulePaths: string[]) =>
     api.put<string[]>(`/user/${id}/plugin-permissions`, { modulePaths }),
 
-  // Set user disabled status (admin only)
+
   setUserDisabled: (id: number, disabled: boolean) =>
     api.put<User>(`/user/${id}/disabled`, { disabled }),
 }
@@ -208,10 +228,10 @@ export const applicationApi = {
 
   deleteApplication: (id: number) => api.delete(`/application/${id}`),
 
-  // 获取单个应用详情（新增）
+
   getApplicationDetails: (id: number) => api.get<Application>(`/application/${id}`),
 
-  // 获取特定应用的消息（含分页）
+
   getApplicationMessages: (id: number, params?: { limit?: number; since?: number }) => {
     try {
       const validatedParams = validatePagingParams(params, 100)
@@ -221,10 +241,10 @@ export const applicationApi = {
     }
   },
 
-  // 删除特定应用的所有消息
+
   deleteApplicationMessages: (id: number) => api.delete(`/application/${id}/message`),
 
-  // 上传应用图标
+
   uploadApplicationImage: (id: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -233,8 +253,12 @@ export const applicationApi = {
     })
   },
 
-  // 删除应用图标
+
   deleteApplicationImage: (id: number) => api.delete(`/application/${id}/image`),
+
+
+  regenerateToken: (id: number) =>
+    api.put<{ regenerateToken: { token: string } }>(`/application/${id}/security`, { regenerateToken: true }),
 }
 
 export const clientApi = {
@@ -242,7 +266,7 @@ export const clientApi = {
 
   getClient: (id: number) => api.get<Client>(`/client/${id}`),
 
-  // 获取单个客户端详情（新增）
+
   getClientDetails: (id: number) => api.get<Client>(`/client/${id}`),
 
   createClient: (client: ClientParams, options?: { auth?: { username: string; password: string } }) =>
@@ -251,28 +275,32 @@ export const clientApi = {
   updateClient: (id: number, client: ClientParams) => api.put<Client>(`/client/${id}`, client),
 
   deleteClient: (id: number) => api.delete(`/client/${id}`),
+
+
+  elevateClient: (id: number, durationSeconds: number, credentials: { username: string; password: string }) =>
+    api.post<void>(`/client/${id}/elevate`, { durationSeconds }, { auth: credentials }),
 }
 
-/**
- * 分页参数验证函数
- * 根据docs/api_spec.json规范验证limit和since参数
- * 提供更清晰的错误提示
- */
+
+
+
+
+
 const validatePagingParams = (params?: { limit?: number; since?: number }, limitDefault: number = 100): { limit?: number; since?: number } => {
   const validatedParams: { limit?: number; since?: number } = {}
 
-  // 验证limit参数 (1-200)
+
   if (params?.limit !== undefined) {
     if (params.limit < 1 || params.limit > 200) {
       throw new ValidationError(`分页参数limit必须在1-200之间，当前值为: ${params.limit}`)
     }
     validatedParams.limit = params.limit
   } else {
-    // 未提供时使用默认值
+
     validatedParams.limit = limitDefault
   }
 
-  // 验证since参数 (>=0)
+
   if (params?.since !== undefined) {
     if (params.since < 0) {
       throw new ValidationError(`分页参数since必须大于等于0，当前值为: ${params.since}`)
@@ -284,13 +312,13 @@ const validatePagingParams = (params?: { limit?: number; since?: number }, limit
 }
 
 export const messageApi = {
-  /**
-   * 获取所有消息（含分页）
-   * @param params 分页参数
-   * @param params.limit 最大消息数量 (1-200, 默认100)
-   * @param params.since 返回 ID 小于该值的消息 (≥0)
-   * @returns Promise<PagedMessages>
-   */
+
+
+
+
+
+
+
   getMessages: (params?: { limit?: number; since?: number }) => {
     try {
       const validatedParams = validatePagingParams(params, 100)
@@ -300,14 +328,20 @@ export const messageApi = {
     }
   },
 
-  /**
-   * 创建消息（使用应用令牌认证）
-   * @param appId 应用ID
-   * @param message 消息内容（支持 Partial<Message>）
-   * @returns Promise<Message>
-   */
+
+
+
+
+  getMessageCount: () => api.get<{ count: number }>('/message/count'),
+
+
+
+
+
+
+
   createMessage: (appId: number, message: Partial<Message>) =>
-    api.post<Message>('/message', message, { appId }),
+    api.post<Message>('/message', { ...message, appid: appId }),
 
   deleteAllMessages: () => api.delete('/message'),
 
@@ -332,11 +366,11 @@ export const pluginApi = {
   getDisplay: (id: number) => api.get<string>(`/plugin/${id}/display`),
   getLogs: (id: number, limit?: number) => api.get<any[]>(`/plugin/${id}/logs`, { params: { limit } }),
 
-  // Update plugin name
+
   updateName: (id: number, name: string) =>
     api.put<{ name: string }>(`/plugin/${id}/name`, { name }),
 
-  // Upload plugin icon
+
   uploadImage: (id: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
@@ -345,15 +379,18 @@ export const pluginApi = {
     })
   },
 
-  // Delete plugin icon
+
   deleteImage: (id: number) => api.delete(`/plugin/${id}/image`),
 
-  // Admin only: create a new plugin instance
+
   createPlugin: (modulePath: string, name: string, targetUserId?: number) =>
     api.post<Plugin>('/plugin', { modulePath, name, targetUserId }),
 
-  // Admin only: delete a plugin instance
-  deletePlugin: (id: number) => api.delete(`/plugin/${id}`)
+
+  deletePlugin: (id: number) => api.delete(`/plugin/${id}`),
+
+
+  getAvailablePlugins: () => api.get<AvailablePlugin[]>('/plugin/available'),
 }
 
 export const systemApi = {

@@ -1,4 +1,10 @@
-// Export all models from a single entry point
+
+
+
+
+
+
+
 export * from './user';
 export * from './application';
 export * from './client';
@@ -8,8 +14,9 @@ export * from './migration';
 export * from './pluginConfig';
 export * from './pluginLog';
 export * from './userPluginPermission';
+export * from './pushOutbox';
 
-// Re-export all tables for easy access
+
 export { users } from './user';
 export { applications } from './application';
 export { clients } from './client';
@@ -19,3 +26,4 @@ export { migrations as migrationTable } from './migration';
 export { pluginConfigs } from './pluginConfig';
 export { pluginLogs } from './pluginLog';
 export { userPluginPermissions } from './userPluginPermission';
+export { pushOutbox } from './pushOutbox';

@@ -1,5 +1,11 @@
+
+
+
+
+
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+
 
 export const pluginLogs = sqliteTable('plugin_logs', {
   id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),

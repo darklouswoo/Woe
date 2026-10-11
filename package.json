@@ -1,35 +1,36 @@
 {
   "name": "woe",
-  "version": "1.1.0",
+  "version": "1.3.3",
   "description": "Gotify-compatible notification service",
   "main": "src/index.ts",
   "scripts": {
-    "dev": "wrangler dev",
-    "dev:auto": "./scripts/dev-with-migration.sh",
-    "deploy": "wrangler deploy",
-    "deploy:auto": "./scripts/deploy-with-migration.sh",
+    "build:metadata": "node scripts/write-build-info.js",
+    "dev": "npm run build:metadata && wrangler dev",
+    "deploy": "npm run build:metadata && wrangler deploy",
     "build": "npm run build:frontend && wrangler deploy --dry-run",
-    "build:frontend": "cd frontend && npm run build",
+    "build:frontend": "npm run build:metadata && cd frontend && npm run build",
     "dev:frontend": "cd frontend && npm run dev",
     "setup:frontend": "cd frontend && npm install",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:update-index": "node scripts/update-migration-index.js"
+    "db:update-index": "node scripts/update-migration-index.js",
+    "test:frontend": "cd frontend && npx vitest run",
+    "test:i18n": "node --test frontend/tests/i18n-coverage.test.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241106.0",
+    "@cloudflare/workers-types": "^5.20260922.1",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
-    "@vitejs/plugin-vue": "^5.1.0",
+    "better-sqlite3": "^13.0.3",
     "drizzle-kit": "^0.31.8",
     "jest": "^30.2.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.6.3",
-    "vite": "^5.4.0",
-    "vue-tsc": "^2.1.0",
-    "wrangler": "^3.114.15"
+    "wrangler": "^4.136.1"
   },
   "dependencies": {
+    "@noble/curves": "^2.4.0",
     "@types/crypto-js": "^4.2.2",
     "crypto-js": "^4.2.0",
     "drizzle-orm": "^0.45.0",

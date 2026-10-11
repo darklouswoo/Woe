@@ -13,7 +13,7 @@
       {{ initials }}
     </div>
 
-    <!-- Upload Overlay -->
+
     <div class="upload-overlay" @click="triggerUpload">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -22,7 +22,7 @@
       </svg>
     </div>
 
-    <!-- Delete Button (only when has avatar) -->
+
     <button
       v-if="user.avatar && !imageError"
       @click="handleDelete"
@@ -51,6 +51,7 @@ import { useI18n } from 'vue-i18n'
 import type { User } from '@/types'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useAlert } from '@/composables/useAlert'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 const { t } = useI18n()
 const { warning } = useAlert()
@@ -76,7 +77,7 @@ const fileInput = ref<HTMLInputElement>()
 const imageError = ref(false)
 const imageLoaded = ref(false)
 
-// Watch for user prop changes
+
 watch(() => props.user, () => {
   imageError.value = false
   imageLoaded.value = false
@@ -91,13 +92,7 @@ const hasImage = computed(() => {
   return props.user.avatar && !imageError.value && imageLoaded.value
 })
 
-const avatarSrc = computed(() => {
-  if (!props.user.avatar) return ''
-  if (props.user.avatar.startsWith('http') || props.user.avatar.startsWith('/')) {
-    return props.user.avatar
-  }
-  return props.user.avatar
-})
+const avatarSrc = computed(() => resolveMediaUrl(props.user.avatar))
 
 const triggerUpload = () => {
   fileInput.value?.click()
@@ -108,13 +103,13 @@ const handleFileChange = async (event: Event) => {
   const file = target.files?.[0]
 
   if (file) {
-    // Validate file type
+
     if (!file.type.startsWith('image/')) {
       await warning(t('common.selectImageFile'))
       return
     }
 
-    // Validate file size (1MB)
+
     if (file.size > 1 * 1024 * 1024) {
       await warning(t('common.imageSizeLimit'))
       return
@@ -123,7 +118,7 @@ const handleFileChange = async (event: Event) => {
     emit('upload', file)
   }
 
-  // Reset input value
+
   target.value = ''
 }
 
@@ -143,7 +138,7 @@ const handleDelete = async () => {
     cancelText: t('common.confirmDialog.cancelButton'),
     type: 'warning'
   })
-  
+
   if (confirmed) {
     emit('delete')
   }
@@ -159,7 +154,7 @@ const handleDelete = async () => {
   border-radius: 50%;
   overflow: hidden;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  color: var(--color-text-inverse);
   font-weight: 600;
   transition: all 0.2s;
 }
@@ -207,36 +202,36 @@ const handleDelete = async () => {
   background-color: transparent;
 }
 
-/* Upload Overlay */
+
 .upload-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
   transition: opacity 0.2s;
   cursor: pointer;
-  color: white;
+  color: var(--color-text-inverse);
 }
 
 .editable-avatar:hover .upload-overlay {
   opacity: 1;
 }
 
-/* Delete Button */
+
 .delete-button {
   position: absolute;
   top: 4px;
   right: 4px;
   width: 24px;
   height: 24px;
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 50%;
   display: flex;
@@ -244,7 +239,7 @@ const handleDelete = async () => {
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background-color 0.2s;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
   padding: 0;
   z-index: 3;
@@ -255,7 +250,7 @@ const handleDelete = async () => {
 }
 
 .delete-button:hover {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .file-input {

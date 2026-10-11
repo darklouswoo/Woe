@@ -4,38 +4,75 @@ import { authApi, clientApi } from '@/services/api'
 import { authService } from '@/services/auth'
 import { wsService } from '@/services/websocket'
 import type { User } from '@/types'
+import { getOrCreateDeviceUid, parseDeviceModel } from '@/utils/device'
+
+
+
+
+
+export const WEB_CLIENT_INACTIVITY_SECONDS = 7 * 24 * 60 * 60
+
+
+
+
+
+
+
+
+export type LogoutResult = 'confirmed' | 'already-unusable' | 'not-confirmed' | 'no-credential'
+
+
+const extractStatus = (error: unknown): number | undefined => {
+  const e = error as { response?: { status?: number }; statusCode?: number }
+  return e?.response?.status ?? e?.statusCode ?? undefined
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const authenticated = ref(false)
 
-  // 统一通过 authService 检查认证状态，而不是直接读取 localStorage
+
+  const elevatedUntil = ref<Date | null>(null)
+
+
   const isAuthenticated = computed(() => {
     return authenticated.value || authService.isTokenValid('client')
   })
 
-  // 获取当前客户端令牌（如果需要）
+
   const token = computed(() => {
     const tokenInfo = authService.getToken('client')
     return tokenInfo?.token || null
   })
 
   const login = async (username: string, password: string) => {
+
+    elevatedUntil.value = null
     try {
-      // Use Basic auth for login
+
       const userResponse = await authApi.login(username, password)
 
-      // Create a client token using Basic auth, then store token
-      const clientRes = await clientApi.createClient({ name: 'Web Client' }, { auth: { username, password } })
 
-      // Store client token using new auth service
+      const clientRes = await clientApi.createClient({
+        name: 'Web Client',
+        platform: 'web',
+        deviceUid: getOrCreateDeviceUid(),
+        deviceModel: parseDeviceModel(),
+
+        expiresAfterInactivitySeconds: WEB_CLIENT_INACTIVITY_SECONDS,
+      }, { auth: { username, password } })
+
+
       authService.setToken('client', clientRes.data.token)
 
-      // Update user state
+
+      authService.setClientId(clientRes.data.id)
+
+
       user.value = userResponse.data
       authenticated.value = true
 
-      // Connect WebSocket after successful login
+
       wsService.connect(clientRes.data.token)
 
       return true
@@ -45,31 +82,97 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  const logout = () => {
+
+  const markElevated = (durationSeconds: number) => {
+    elevatedUntil.value = new Date(Date.now() + durationSeconds * 1000)
+  }
+
+
+
+
+
+  const resetLocalAuth = () => {
     user.value = null
-    // 通过 authService 清理所有认证信息
-    authService.clearAllAuth()
     authenticated.value = false
 
-    // Disconnect WebSocket on logout
+    elevatedUntil.value = null
+
+    authService.clearAllAuth()
+
     wsService.disconnect()
   }
 
+
+
+
+
+
+
+
+
+  const logout = (): Promise<LogoutResult> => {
+    const capturedToken = authService.getClientCredentialForRevocation()
+
+
+    resetLocalAuth()
+
+    if (!capturedToken) {
+      return Promise.resolve('no-credential')
+    }
+
+    return authApi.logout(capturedToken).then(
+      () => 'confirmed' as const,
+      (error: unknown) => {
+        const status = extractStatus(error)
+        if (status === 401) {
+
+          return 'already-unusable' as const
+        }
+
+        return 'not-confirmed' as const
+      }
+    )
+  }
+
   const checkAuth = async () => {
-    // 检查 authService 中的 token 是否有效
+
     if (!authService.isTokenValid('client')) {
       user.value = null
       authenticated.value = false
       return false
     }
 
+
+
+    const startToken = authService.getClientCredentialForRevocation()
+
     try {
       const response = await authApi.getCurrentUser()
+      if (authService.getClientCredentialForRevocation() !== startToken) {
+
+        return false
+      }
       user.value = response.data
       authenticated.value = true
       return true
     } catch (error) {
-      logout()
+      const currentToken = authService.getClientCredentialForRevocation()
+
+
+      if (currentToken !== null && currentToken !== startToken) {
+        return false
+      }
+
+      const status = extractStatus(error)
+      user.value = null
+      authenticated.value = false
+      if (status === 401) {
+
+
+        resetLocalAuth()
+      }
+
+
       return false
     }
   }
@@ -77,9 +180,13 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     token,
+    authenticated,
     isAuthenticated,
+    elevatedUntil,
+    markElevated,
     login,
     logout,
+    resetLocalAuth,
     checkAuth
   }
 })

@@ -26,7 +26,7 @@ const emitClose = () => emit('close')
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -36,9 +36,9 @@ const emitClose = () => emit('close')
 .modal-container {
   width: 100%;
   max-width: 520px;
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
@@ -47,7 +47,7 @@ const emitClose = () => emit('close')
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .modal-body {
@@ -59,7 +59,7 @@ const emitClose = () => emit('close')
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .close-btn {
@@ -67,10 +67,10 @@ const emitClose = () => emit('close')
   border: none;
   cursor: pointer;
   font-size: 1rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .close-btn:hover {
-  color: #111827;
+  color: var(--color-text-primary);
 }
 </style>

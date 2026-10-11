@@ -1,27 +1,43 @@
+
+
+
+
+
+
 import { User, UserWithPass, Application, Client, PluginConf } from "../types/index.ts";
 import { ApiResponse, toBoolean, formatDate } from "../utils/response.ts";
-import { validateImageFile } from "../utils/fileValidation.ts";
+import { IMAGE_MAX_FILE_SIZE, validateImageFile, validateRawImageRequest } from "../utils/fileValidation.ts";
 import { DrizzleDB } from "../drizzle/index.ts";
 import { users, applications, clients, pluginConfigs, userPluginPermissions, messages } from "../models/index.ts";
 import { eq, sql, count, and, inArray } from "drizzle-orm";
+import { ImageCompressionError, ImageCompressionService } from "../services/imageCompressionService.ts";
+import { MessageStreamHub } from "../services/messageStreamHub.ts";
+import { isUsernameUniqueViolation } from "../utils/userConflict.ts";
+import { normalizeMediaPath, DEFAULT_APP_IMAGE } from "../utils/mediaPath.ts";
 
-// User Management API handlers for Woe - Gotify compatible
+
+
 export class UserHandlers {
-  constructor(private drizzle: DrizzleDB) {}
+  constructor(private drizzle: DrizzleDB, private streamHub?: MessageStreamHub) {}
 
-  // Helper to map DB result to User type
+
+
+
+
   private mapToUser(row: any): User {
     return {
       id: row.id,
       name: row.name,
       nickname: row.nickname || row.name,
       email: row.email,
-      avatar: row.avatar,
+      avatar: row.avatar ? normalizeMediaPath(row.avatar) : row.avatar,
       description: row.description,
       admin: toBoolean(row.admin),
-      disabled: toBoolean(row.disabled)
+      disabled: toBoolean(row.disabled),
+      createdAt: formatDate(row.createdAt) ?? null
     };
   }
+
 
   private async countActiveAdmins(): Promise<number> {
     try {
@@ -37,6 +53,7 @@ export class UserHandlers {
     }
   }
 
+
   private async isUserAdmin(userId: number): Promise<boolean> {
     try {
       const result = await this.drizzle
@@ -50,7 +67,8 @@ export class UserHandlers {
     }
   }
 
-  // GET /user - Return all users
+
+
   async getAllUsers(): Promise<Response> {
     try {
       const usersList = await this.drizzle
@@ -62,7 +80,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         })
         .from(users)
         .where(eq(users.disabled, false))
@@ -76,24 +95,37 @@ export class UserHandlers {
     }
   }
 
-  // POST /user - Create a user
+
+
   async createUser(
-    name: string, 
-    pass: string, 
+    name: string,
+    pass: string,
     admin: boolean = false,
-    nickname: string,
-    email: string,
+    nickname?: string,
+    email?: string,
     description?: string
   ): Promise<Response> {
     try {
       const { hashPassword } = await import("../middleware/auth.ts");
       const hashed = await hashPassword(pass);
 
-      // 验证 email 格式
-      const finalEmail = email?.trim() || 'needupdate@crownkin.space';
+
+      const finalEmail = email?.trim() || 'needupdate@example.com';
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (email && !emailRegex.test(finalEmail)) {
         return ApiResponse.error("Bad Request", 400, "Invalid email format");
+      }
+
+
+
+      const existing = await this.drizzle
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.name, name))
+        .get();
+
+      if (existing) {
+        return ApiResponse.error("Bad Request", 400, "username already exists");
       }
 
       const result = await this.drizzle
@@ -114,7 +146,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         });
 
       if (!result || result.length === 0) {
@@ -123,11 +156,17 @@ export class UserHandlers {
 
       return ApiResponse.json(this.mapToUser(result[0]));
     } catch (error) {
+
+
+      if (isUsernameUniqueViolation(error)) {
+        return ApiResponse.error("Bad Request", 400, "username already exists");
+      }
       return ApiResponse.error("Database error", 500, "Failed to create user");
     }
   }
 
-  // GET /user/{id} - Get a user by ID
+
+
   async getUser(id: string): Promise<Response> {
     try {
       const userId = parseInt(id);
@@ -141,7 +180,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         })
         .from(users)
         .where(sql`${users.id} = ${userId} AND ${users.disabled} = 0`)
@@ -157,7 +197,8 @@ export class UserHandlers {
     }
   }
 
-  // PUT /user/{id} - Update a user
+
+
   async updateUser(id: string, data: {name?: string; pass?: string; admin?: boolean}): Promise<Response> {
     try {
       const userId = parseInt(id);
@@ -205,7 +246,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         });
 
       if (!result || result.length === 0) {
@@ -218,33 +260,48 @@ export class UserHandlers {
     }
   }
 
-  // DELETE /user/{id} - Delete a user
+
+
   async deleteUser(id: string): Promise<Response> {
     try {
       const userId = parseInt(id);
-      
+
       if (isNaN(userId)) {
         return ApiResponse.error("Bad Request", 400, "Invalid user ID");
       }
-      
+
       const adminCount = await this.countActiveAdmins();
       const isTargetAdmin = await this.isUserAdmin(userId);
-      
+
       if (isTargetAdmin && adminCount <= 1) {
         return ApiResponse.error(
-          "Forbidden", 
-          403, 
+          "Forbidden",
+          403,
           "Cannot delete the last administrator. Create another admin user first."
         );
       }
-      
-      // 删除关联数据（按依赖顺序）
+
+      let clientIds: number[] = [];
+      if (this.streamHub) {
+        try {
+          const clientRows = await this.drizzle
+            .select({ id: clients.id })
+            .from(clients)
+            .where(eq(clients.userId, userId))
+            .all();
+          clientIds = clientRows.map((row) => row.id);
+        } catch (error) {
+          console.error("Failed to list user clients before deletion:", error);
+        }
+      }
+
+
       await this.drizzle.delete(messages).where(eq(messages.userid, userId));
       await this.drizzle.delete(userPluginPermissions).where(eq(userPluginPermissions.userId, userId));
       await this.drizzle.delete(pluginConfigs).where(eq(pluginConfigs.userId, userId));
       await this.drizzle.delete(clients).where(eq(clients.userId, userId));
       await this.drizzle.delete(applications).where(eq(applications.userId, userId));
-      
+
       const result = await this.drizzle
         .delete(users)
         .where(eq(users.id, userId));
@@ -253,14 +310,30 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "User not found");
       }
 
+      if (this.streamHub) {
+        for (const clientId of clientIds) {
+          try {
+            await this.streamHub.disconnectClient(userId, clientId);
+          } catch (error) {
+            console.error(`Failed to disconnect deleted user client ${clientId}:`, error);
+          }
+        }
+      }
+
       return ApiResponse.json({});
     } catch (error) {
       return ApiResponse.error("Database error", 500, "Failed to delete user");
     }
   }
 
-  // GET /current/user - Return the current user
-  async getCurrentUser(userId: number): Promise<Response> {
+
+
+
+
+  async getCurrentUser(
+    userId: number,
+    clientAuth?: { clientId?: number; elevatedUntil?: string | null }
+  ): Promise<Response> {
     try {
       const result = await this.drizzle
         .select({
@@ -271,7 +344,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         })
         .from(users)
         .where(sql`${users.id} = ${userId} AND ${users.disabled} = 0`)
@@ -281,16 +355,29 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "User not found");
       }
 
-      return ApiResponse.json(this.mapToUser(result));
+      const user = this.mapToUser(result);
+      if (clientAuth?.clientId !== undefined) {
+        user.clientId = clientAuth.clientId;
+
+
+        if (clientAuth.elevatedUntil) {
+          const until = new Date(clientAuth.elevatedUntil).getTime();
+          if (until > Date.now()) {
+            user.elevatedUntil = formatDate(clientAuth.elevatedUntil) ?? clientAuth.elevatedUntil;
+          }
+        }
+      }
+
+      return ApiResponse.json(user);
     } catch (error) {
       return ApiResponse.error("Database error", 500, "Failed to retrieve current user");
     }
   }
 
-  // POST /current/user/password - Update the password of the current user with old password verification
-  async updateCurrentUserPassword(userId: number, oldPassword: string, newPassword: string): Promise<Response> {
+
+
+  async updateCurrentUserPassword(userId: number, pass: string): Promise<Response> {
     try {
-      // 首先获取用户当前密码
       const userResult = await this.drizzle
         .select({ pass: users.pass })
         .from(users)
@@ -301,19 +388,9 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "User not found");
       }
 
-      // 验证旧密码
-      const { verifyPassword } = await import("../middleware/auth.ts");
-      const isOldPasswordValid = await verifyPassword(userResult.pass, oldPassword);
-
-      if (!isOldPasswordValid) {
-        return ApiResponse.error("Unauthorized", 401, "Current password is incorrect");
-      }
-
-      // 哈希新密码
       const { hashPassword } = await import("../middleware/auth.ts");
-      const hashed = await hashPassword(newPassword);
+      const hashed = await hashPassword(pass);
 
-      // 更新密码
       const result = await this.drizzle
         .update(users)
         .set({ pass: hashed })
@@ -328,27 +405,27 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "User not found");
       }
 
-      // The spec says this endpoint returns "Ok" - return empty 200 response per Gotify spec
       return new Response(null, { status: 200 });
     } catch (error) {
       return ApiResponse.error("Database error", 500, "Failed to update password");
     }
   }
 
-  // Optional: Add method to enable/disable users (admin only)
+
+
   async setUserDisabled(id: string, disabled: boolean): Promise<Response> {
     try {
       const userId = parseInt(id);
-      
+
       if (isNaN(userId)) {
         return ApiResponse.error("Bad Request", 400, "Invalid user ID");
       }
 
-      // 保护最后一个管理员
+
       if (disabled) {
         const adminCount = await this.countActiveAdmins();
         const isTargetAdmin = await this.isUserAdmin(userId);
-        
+
         if (isTargetAdmin && adminCount <= 1) {
           return ApiResponse.error(
             "Forbidden",
@@ -357,7 +434,7 @@ export class UserHandlers {
           );
         }
       }
-      
+
       const result = await this.drizzle
         .update(users)
         .set({ disabled })
@@ -370,7 +447,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         });
 
       if (!result || result.length === 0) {
@@ -383,7 +461,8 @@ export class UserHandlers {
     }
   }
 
-  // GET /user/{id}/applications - Get applications for a specific user (admin only)
+
+
   async getUserApplications(userId: number): Promise<Response> {
     try {
       const apps = await this.drizzle
@@ -395,7 +474,8 @@ export class UserHandlers {
           defaultPriority: applications.defaultPriority,
           image: applications.image,
           internal: applications.internal,
-          lastUsed: applications.lastUsed
+          lastUsed: applications.lastUsed,
+          createdAt: applications.createdAt
         })
         .from(applications)
         .where(eq(applications.userId, userId))
@@ -403,13 +483,16 @@ export class UserHandlers {
 
       const mappedApps = apps.map(row => ({
         id: row.id,
-        token: row.token,
+
+        token: "",
         name: row.name,
         description: row.description || "",
         internal: Boolean(row.internal),
-        image: row.image || "",
+
+        image: normalizeMediaPath(row.image, DEFAULT_APP_IMAGE),
         lastUsed: formatDate(row.lastUsed) || null,
-        defaultPriority: row.defaultPriority || 0
+        defaultPriority: row.defaultPriority || 0,
+        createdAt: formatDate(row.createdAt) ?? null
       }));
 
       return ApiResponse.json(mappedApps);
@@ -418,7 +501,8 @@ export class UserHandlers {
     }
   }
 
-  // GET /user/{id}/clients - Get clients for a specific user (admin only)
+
+
   async getUserClients(userId: number): Promise<Response> {
     try {
       const clientsList = await this.drizzle
@@ -426,7 +510,8 @@ export class UserHandlers {
           id: clients.id,
           token: clients.token,
           name: clients.name,
-          lastUsed: clients.lastUsed
+          lastUsed: clients.lastUsed,
+          createdAt: clients.createdAt
         })
         .from(clients)
         .where(eq(clients.userId, userId))
@@ -434,9 +519,11 @@ export class UserHandlers {
 
       const mappedClients = clientsList.map(row => ({
         id: row.id,
-        token: row.token,
+
+        token: "",
         name: row.name,
-        lastUsed: formatDate(row.lastUsed) || null
+        lastUsed: formatDate(row.lastUsed) || null,
+        createdAt: formatDate(row.createdAt) ?? null
       }));
 
       return ApiResponse.json(mappedClients);
@@ -445,7 +532,8 @@ export class UserHandlers {
     }
   }
 
-  // GET /user/{id}/plugins - Get plugins for a specific user (admin only)
+
+
   async getUserPlugins(userId: number): Promise<Response> {
     try {
       const pluginsList = await this.drizzle
@@ -455,7 +543,8 @@ export class UserHandlers {
           token: pluginConfigs.token,
           modulePath: pluginConfigs.modulePath,
           enabled: pluginConfigs.enabled,
-          icon: pluginConfigs.icon
+          icon: pluginConfigs.icon,
+          createdAt: pluginConfigs.createdAt
         })
         .from(pluginConfigs)
         .where(eq(pluginConfigs.userId, userId))
@@ -467,8 +556,10 @@ export class UserHandlers {
         token: row.token,
         modulePath: row.modulePath,
         enabled: Boolean(row.enabled),
-        icon: row.icon,
-        capabilities: []
+
+        icon: row.icon ? normalizeMediaPath(row.icon) : row.icon,
+        capabilities: [],
+        createdAt: formatDate(row.createdAt) ?? null
       }));
 
       return ApiResponse.json(mappedPlugins);
@@ -477,7 +568,8 @@ export class UserHandlers {
     }
   }
 
-  // PUT /user/{id}/profile - Update user profile (nickname, email, description)
+
+
   async updateUserProfile(
     currentUserId: number,
     targetUserId: number,
@@ -485,7 +577,7 @@ export class UserHandlers {
     data: { nickname?: string; email?: string; description?: string }
   ): Promise<Response> {
     try {
-      // Non-admin can only update their own profile
+
       if (!isAdmin && currentUserId !== targetUserId) {
         return ApiResponse.error("Forbidden", 403, "You can only update your own profile");
       }
@@ -529,7 +621,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         });
 
       if (!result || result.length === 0) {
@@ -542,7 +635,8 @@ export class UserHandlers {
     }
   }
 
-  // POST /user/{id}/avatar - Upload user avatar
+
+
   async uploadUserAvatar(
     currentUserId: number,
     targetUserId: number,
@@ -551,12 +645,12 @@ export class UserHandlers {
     env: any
   ): Promise<Response> {
     try {
-      // Non-admin can only upload their own avatar
+
       if (!isAdmin && currentUserId !== targetUserId) {
         return ApiResponse.error("Forbidden", 403, "You can only update your own avatar");
       }
 
-      // Check if user exists
+
       const userResult = await this.drizzle
         .select({ id: users.id })
         .from(users)
@@ -567,14 +661,16 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "User not found");
       }
 
-      // Check if R2 bucket is available
+
       if (!env.R2) {
         return ApiResponse.error("Service Unavailable", 503, "R2 storage not configured");
       }
 
-      // Parse file from request
+
       const contentType = request.headers.get("content-type") || "";
-      let fileBody: ReadableStream | ArrayBuffer;
+      let sourceBuffer: ArrayBuffer;
+
+      let fileBody: ArrayBuffer;
       let fileContentType: string;
 
       if (contentType.includes("multipart/form-data")) {
@@ -587,26 +683,45 @@ export class UserHandlers {
 
         const fileBlob = file as Blob;
 
-        // Validate file type and size using file-type (checks magic numbers)
+
         const validation = await validateImageFile(fileBlob);
         if (!validation.valid) {
           return ApiResponse.error("Bad Request", 400, validation.error || "Invalid image file");
         }
 
-        fileBody = await fileBlob.arrayBuffer();
+        sourceBuffer = await fileBlob.arrayBuffer();
         fileContentType = fileBlob.type;
-      } else if (contentType.startsWith("image/")) {
-        fileBody = request.body!;
-        fileContentType = contentType;
+      } else if (contentType.toLowerCase().startsWith("image/")) {
+        const validation = await validateRawImageRequest(request, IMAGE_MAX_FILE_SIZE);
+        if (!validation.valid || !validation.buffer || !validation.mime) {
+          return ApiResponse.error("Bad Request", 400, validation.error || "Invalid image file");
+        }
+        sourceBuffer = validation.buffer;
+        fileContentType = validation.mime;
       } else {
         return ApiResponse.error("Bad Request", 400, "Invalid content type");
       }
 
-      // Generate unique filename
+      const compressor = new ImageCompressionService(this.drizzle, env);
+      try {
+        const compressed = await compressor.processImage(sourceBuffer, fileContentType);
+        fileBody = compressed.body;
+        fileContentType = compressed.contentType;
+      } catch (error) {
+        if (error instanceof ImageCompressionError) {
+          if (error.status === 503) {
+            return ApiResponse.error("Service Unavailable", 503, error.publicMessage);
+          }
+          return ApiResponse.error("Internal Server Error", 500, error.publicMessage);
+        }
+        throw error;
+      }
+
+
       const timestamp = Date.now();
       const filename = `user-avatars/${targetUserId}-${timestamp}`;
 
-      // Upload to R2
+
       const object = await env.R2.put(filename, fileBody, {
         httpMetadata: { contentType: fileContentType },
       });
@@ -615,7 +730,7 @@ export class UserHandlers {
         return ApiResponse.error("Internal Server Error", 500, "Upload failed");
       }
 
-      // Update user with new avatar URL
+
       const imageUrl = `/api/v1/image/${filename}`;
       const result = await this.drizzle
         .update(users)
@@ -629,7 +744,8 @@ export class UserHandlers {
           avatar: users.avatar,
           description: users.description,
           admin: users.admin,
-          disabled: users.disabled
+          disabled: users.disabled,
+          createdAt: users.createdAt
         });
 
       if (!result || result.length === 0) {
@@ -638,11 +754,13 @@ export class UserHandlers {
 
       return ApiResponse.json(this.mapToUser(result[0]));
     } catch (error) {
-      return ApiResponse.error("Upload failed", 500, error instanceof Error ? error.message : "Unknown error");
+      console.error("Error uploading user avatar:", error);
+      return ApiResponse.error("Upload failed", 500, "Avatar upload failed");
     }
   }
 
-  // DELETE /user/{id}/avatar - Delete user avatar
+
+
   async deleteUserAvatar(
     currentUserId: number,
     targetUserId: number,
@@ -650,12 +768,12 @@ export class UserHandlers {
     env: any
   ): Promise<Response> {
     try {
-      // Non-admin can only delete their own avatar
+
       if (!isAdmin && currentUserId !== targetUserId) {
         return ApiResponse.error("Forbidden", 403, "You can only delete your own avatar");
       }
 
-      // Get current avatar
+
       const userResult = await this.drizzle
         .select({ avatar: users.avatar })
         .from(users)
@@ -671,13 +789,13 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "No avatar to delete");
       }
 
-      // Delete from R2
+
       const filename = currentAvatar.replace("/api/v1/image/", "");
       if (env.R2 && filename) {
         await env.R2.delete(filename);
       }
 
-      // Update user to remove avatar
+
       await this.drizzle
         .update(users)
         .set({ avatar: null })
@@ -685,11 +803,13 @@ export class UserHandlers {
 
       return ApiResponse.json({});
     } catch (error) {
-      return ApiResponse.error("Delete failed", 500, error instanceof Error ? error.message : "Unknown error");
+      console.error("Error deleting user avatar:", error);
+      return ApiResponse.error("Delete failed", 500, "Avatar deletion failed");
     }
   }
 
-  // GET /user/{id}/plugin-permissions - Get plugin permissions for a user (admin only)
+
+
   async getUserPluginPermissions(userId: number): Promise<Response> {
     try {
       const permissions = await this.drizzle
@@ -706,10 +826,11 @@ export class UserHandlers {
     }
   }
 
-  // PUT /user/{id}/plugin-permissions - Update plugin permissions for a user (admin only)
+
+
   async updateUserPluginPermissions(userId: number, modulePaths: string[]): Promise<Response> {
     try {
-      // Check if user exists
+
       const userResult = await this.drizzle
         .select({ id: users.id })
         .from(users)
@@ -720,12 +841,12 @@ export class UserHandlers {
         return ApiResponse.error("Not Found", 404, "User not found");
       }
 
-      // Delete existing permissions for this user
+
       await this.drizzle
         .delete(userPluginPermissions)
         .where(eq(userPluginPermissions.userId, userId));
 
-      // Insert new permissions
+
       if (modulePaths.length > 0) {
         const permissionsToInsert = modulePaths.map(modulePath => ({
           userId,
@@ -737,7 +858,7 @@ export class UserHandlers {
           .values(permissionsToInsert);
       }
 
-      // Invalidate plugin cache for this user
+
       try {
         const { PluginManager } = await import('../plugins/manager.ts');
         const pm = new PluginManager(this.drizzle);

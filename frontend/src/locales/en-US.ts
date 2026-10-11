@@ -18,6 +18,8 @@ export default {
     add: 'Add',
     create: 'Create',
     search: 'Search',
+    allApplications: 'All Applications',
+    allPriorities: 'All Priorities',
     actions: 'Actions',
     confirm: 'Confirm',
     success: 'Success',
@@ -38,6 +40,11 @@ export default {
     addSuccess: 'Added successfully',
     switchLanguage: 'Switch Language',
     languageSwitched: 'Language switched',
+    switchTheme: 'Switch Theme',
+    theme: 'Theme',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeAuto: 'System',
     unknown: 'Unknown',
     never: 'Never',
     database: 'Database',
@@ -98,6 +105,7 @@ export default {
     confirmPassword: 'Confirm Password',
     initToken: 'Initialization Token',
     submit: 'Initialize System',
+    success: 'Initialization completed successfully. Redirecting to login...',
     error: {
       passwordMismatch: 'Passwords do not match',
       passwordTooShort: 'Password must be at least 8 characters',
@@ -116,9 +124,23 @@ export default {
     viewAll: 'View All',
     noMessages: 'No messages'
   },
+  notFound: {
+    title: 'Page Not Found',
+    description: 'The page you are looking for does not exist or has been moved.',
+    backToDashboard: 'Back to Dashboard'
+  },
+  connection: {
+    connected: 'Connected',
+    connecting: 'Connecting...',
+    disconnected: 'Disconnected',
+    reconnect: 'Reconnect',
+    lastConnected: 'Last connected: {time}'
+  },
   messages: {
     title: 'Message Management',
     searchPlaceholder: 'Search messages...',
+    clearSearch: 'Clear search',
+    resetFilters: 'Reset Filters',
     noMessages: 'No messages',
     messagePriority: 'Priority',
     application: 'Application',
@@ -137,6 +159,11 @@ export default {
     deleteMessage: 'Delete message',
     loadMore: 'Load More',
     noMoreMessages: 'No more messages',
+    editorLoadFailed: 'Editor load failed',
+    loadApplicationsFailed: 'Failed to load applications',
+    fetchError: 'Failed to fetch messages',
+    loadMoreFailed: 'Failed to load more messages',
+    deleteFailed: 'Failed to delete message',
     loadingMessages: 'Loading messages...',
     emptyDescription: 'Messages will appear here when applications send notifications.'
     , sendNotification: 'Send Notification'
@@ -161,7 +188,30 @@ export default {
     priorityEmergency: 'Emergency',
     enableBrowserNotifications: 'Enable Browser Notifications',
     enableBrowserNotificationsDescription: 'Receive new message notifications in your browser, even when the page is not active.',
-    dismiss: 'Dismiss'
+    dismiss: 'Dismiss',
+    advancedOptions: 'Advanced Options',
+    codeCopy: 'Copy',
+    copied: 'Copied',
+    codeFormat: 'Format',
+    previewRender: 'Render view',
+    backToEdit: 'Back to edit',
+    filterTags: 'Filter Tags',
+    removeTag: 'Click to remove',
+    tagPlaceholder: 'Enter tag, press Enter to add',
+    tagHint: 'Only letters, numbers, hyphens and underscores allowed',
+    tagHistory: 'Tag History',
+    clickToAdd: 'Click to add',
+    invalidTagFormat: 'Invalid tag format',
+    tooManyTags: 'Maximum 10 tags allowed',
+    enableNotifications: 'Enable Notifications',
+    messageDetail: 'Message Details',
+    messageId: 'Message ID',
+    applicationId: 'Application ID',
+    messageDate: 'Date',
+    extrasData: 'Extended Data',
+    noTitle: '(No Title)',
+    unknownApplication: 'Unknown Application',
+    applicationNotFound: 'Application not found'
   },
   applications: {
     title: 'Application Management',
@@ -194,7 +244,12 @@ export default {
     uploadIconError: 'Failed to upload icon',
     iconDeleted: 'Icon deleted successfully!',
     deleteIconError: 'Failed to delete icon',
-    deleteConfirmWithName: 'Are you sure you want to delete the application "{name}"? This action cannot be undone.'
+    deleteIconConfirm: 'Are you sure you want to delete the application icon?',
+    deleteConfirmWithName: 'Are you sure you want to delete the application "{name}"? This action cannot be undone.',
+
+    regenerateToken: 'Regenerate Token',
+    regenerated: 'Token regenerated. Copy and store it now.',
+    regenerateFailed: 'Failed to regenerate token'
   },
   clients: {
     title: 'Client Management',
@@ -218,7 +273,36 @@ export default {
     lastUsed: 'Last used',
     deleteConfirm: 'Are you sure you want to delete this client?',
     deleteSuccess: 'Client deleted successfully!',
-    deleteError: 'Failed to delete client: {error}'
+    deleteError: 'Failed to delete client: {error}',
+    editTitle: 'Edit Client',
+    createTitle: 'Create Client',
+    creating: 'Creating...',
+    createError: 'Failed to create client: {error}',
+    nameRequired: 'Name is required',
+    update: 'Update',
+    updating: 'Updating...',
+    updateError: 'Failed to update client: {error}',
+
+    id: 'ID',
+    platform: 'Platform',
+    deviceModel: 'Device Model',
+    deviceUid: 'Device UID',
+    tokenStatus: 'Token Status',
+    appVersion: 'App Version',
+    elevatedUntil: 'Elevated Until',
+    unknown: 'Unknown',
+
+    status: {
+      active: 'Active',
+      inactive: 'Inactive',
+      invalid: 'Invalid',
+      expired: 'Expired'
+    },
+
+    createdTitle: 'Client Created',
+    tokenLabel: 'Client Token',
+    tokenHint: 'Copy and store this token now — it will only be shown once and is no longer returned with the client list.',
+    done: 'Done'
   },
   users: {
     title: 'User Management',
@@ -302,6 +386,27 @@ export default {
     nameRequired: 'Name is required',
     updateError: 'Failed to update application'
   },
+  createApplication: {
+    title: 'Create Application',
+    name: 'Name',
+    description: 'Description',
+    defaultPriority: 'Default Priority',
+    cancel: 'Cancel',
+    create: 'Create',
+    creating: 'Creating...',
+    namePlaceholder: 'e.g. Notification App',
+    descriptionPlaceholder: 'Optional description',
+    priorityPlaceholder: '0-3',
+    nameRequired: 'Name is required',
+    createError: 'Failed to create application',
+
+    createdTitle: 'Application Created',
+    tokenLabel: 'Application Token',
+    tokenHint: 'Copy and store this token now — it will only be shown once.',
+    copyToken: 'Copy Token',
+    tokenCopied: 'Token copied to clipboard!',
+    done: 'Done'
+  },
   applicationDetail: {
     loading: 'Loading application details...',
     errorTitle: 'Error loading application',
@@ -316,6 +421,14 @@ export default {
     deleteApplication: 'Delete Application',
     tokenTitle: 'Application Token',
     tokenDescription: 'Use this token to send messages to this application via the REST API.',
+    regenerateToken: 'Regenerate Token',
+    regenerateWarning: 'Are you sure you want to regenerate the token? The old token will be invalidated immediately and all consumers must update to the new one.',
+    regenerated: 'Token regenerated. Copy and store it now.',
+    regenerateFailed: 'Failed to regenerate token',
+
+    tokenUnknownHint: 'For security, the token is no longer returned by the detail endpoint; it is shown only once when created or regenerated. Regenerate to view it.',
+    showToken: 'Show token',
+    hideToken: 'Hide token',
     recentMessages: 'Recent Messages',
     viewAllMessages: 'View All Messages',
     loadingMessages: 'Loading messages...',
@@ -374,7 +487,7 @@ export default {
     loadError: 'Failed to load plugins',
     addPlugin: 'Add Plugin',
     type: 'Plugin Type',
-    namePlaceholder: 'e.g., Webhooker-Slack',
+    namePlaceholder: 'e.g., My-Notifier',
     createSuccess: 'Plugin created successfully',
     createError: 'Failed to create plugin',
     deleteConfirm: 'Are you sure you want to delete "{name}"?',
@@ -396,6 +509,28 @@ export default {
     configPlaceholder: 'Enter YAML configuration...',
     updateSucceeded: 'Plugin updated successfully',
     updateError: 'Failed to update plugin'
+  },
+  pluginDetail: {
+    loadingDetails: 'Loading plugin details...',
+    retry: 'Retry',
+    modulePath: 'Module Path',
+    configuration: 'Configuration',
+    noConfig: 'This plugin does not have any configuration.',
+    pluginDisplay: 'Plugin Display',
+    loadingDisplay: 'Loading plugin display...',
+    noDisplay: 'This plugin does not provide any display content.',
+    executionLogs: 'Execution Logs',
+    loadingLogs: 'Loading logs...',
+    noLogs: 'No logs.',
+    logTime: 'Time',
+    logEvent: 'Event',
+    logStatus: 'Status',
+    logDuration: 'Duration',
+    logError: 'Error',
+    failure: 'Failure',
+    notFound: 'Plugin not found',
+    configSaved: 'Configuration saved successfully',
+    configSaveFailed: 'Failed to save configuration'
   },
   notificationSettings: {
     title: 'Notification Settings',
@@ -438,9 +573,20 @@ export default {
   settings: {
     title: 'Settings',
     description: 'Manage your account and application settings',
-    notifications: 'Notifications'
+    notifications: 'Notifications',
+    display: 'Display',
+    renderMarkdown: 'Message rendering',
+    renderMarkdownDesc: 'Detect Markdown, math formulas and code in the message detail dialog and render them as rich text. Turn off to show plain text there'
+  },
+  elevate: {
+    title: 'Password confirmation required',
+    message: 'Please enter your current password to perform this sensitive action',
+    passwordLabel: 'Current password',
+    confirm: 'Confirm',
+    cancel: 'Cancel',
+    wrongPassword: 'Incorrect password, please try again',
+    relogin: 'Session information is missing, please log out and sign in again',
+    attemptsExhausted: 'Too many attempts, the action has been cancelled',
+    requestFailed: 'Verification failed, please try again'
   }
 }
-
-
-

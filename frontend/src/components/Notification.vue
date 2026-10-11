@@ -32,14 +32,14 @@
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
           </div>
-          
+
           <div class="notification-content">
             <div class="notification-title">{{ notification.title }}</div>
             <div v-if="notification.message" class="notification-message">{{ notification.message }}</div>
           </div>
-          
-          <button 
-            v-if="!notification.persistent" 
+
+          <button
+            v-if="!notification.persistent"
             @click="removeNotification(notification.id)"
             class="notification-close"
           >
@@ -48,7 +48,7 @@
               <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
           </button>
-          
+
           <div v-if="notification.actions && notification.actions.length" class="notification-actions">
             <button
               v-for="action in notification.actions"
@@ -80,8 +80,8 @@ const removeNotification = (id: string) => {
 
 const addNotification = (notification: NotificationItem) => {
   notifications.value.push(notification)
-  
-  // 如果不是持久通知，设置自动移除
+
+
   if (!notification.persistent && notification.duration && notification.duration > 0) {
     setTimeout(() => {
       removeNotification(notification.id)
@@ -90,12 +90,12 @@ const addNotification = (notification: NotificationItem) => {
 }
 
 onMounted(() => {
-  // 注册通知回调
+
   errorHandler.registerNotificationCallback(addNotification)
 })
 
 onUnmounted(() => {
-  // 清理所有通知
+
   notifications.value = []
 })
 </script>
@@ -114,9 +114,9 @@ onUnmounted(() => {
 }
 
 .notification {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
   padding: 16px;
   display: flex;
   align-items: flex-start;
@@ -136,19 +136,19 @@ onUnmounted(() => {
 }
 
 .notification-success::before {
-  background-color: #10b981;
+  background-color: var(--color-success);
 }
 
 .notification-error::before {
-  background-color: #ef4444;
+  background-color: var(--color-error);
 }
 
 .notification-warning::before {
-  background-color: #f59e0b;
+  background-color: var(--color-warning);
 }
 
 .notification-info::before {
-  background-color: #3b82f6;
+  background-color: var(--color-info);
 }
 
 .notification-icon {
@@ -157,19 +157,19 @@ onUnmounted(() => {
 }
 
 .notification-success .notification-icon {
-  color: #10b981;
+  color: var(--color-success);
 }
 
 .notification-error .notification-icon {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .notification-warning .notification-icon {
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .notification-info .notification-icon {
-  color: #3b82f6;
+  color: var(--color-info);
 }
 
 .notification-content {
@@ -181,14 +181,14 @@ onUnmounted(() => {
   font-weight: 600;
   font-size: 14px;
   line-height: 20px;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin-bottom: 4px;
 }
 
 .notification-message {
   font-size: 14px;
   line-height: 20px;
-  color: #6b7280;
+  color: var(--color-text-secondary);
   word-break: break-word;
 }
 
@@ -199,7 +199,7 @@ onUnmounted(() => {
   padding: 4px;
   border-radius: 4px;
   cursor: pointer;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -207,8 +207,8 @@ onUnmounted(() => {
 }
 
 .notification-close:hover {
-  background-color: #f3f4f6;
-  color: #6b7280;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-tertiary);
 }
 
 .notification-actions {
@@ -224,27 +224,27 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid #d1d5db;
-  background-color: white;
-  color: #374151;
+  border: 1px solid var(--color-border-secondary);
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-secondary);
   transition: all 0.2s;
 }
 
 .notification-action:hover {
-  background-color: #f9fafb;
+  background-color: var(--color-bg-tertiary);
 }
 
 .notification-action-primary {
-  background-color: #3b82f6;
-  border-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 .notification-action-primary:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
-/* 动画效果 */
+
 .notification-enter-active,
 .notification-leave-active {
   transition: all 0.3s ease;
@@ -264,7 +264,7 @@ onUnmounted(() => {
   transition: transform 0.3s ease;
 }
 
-/* 响应式设计 */
+
 @media (max-width: 640px) {
   .notification-container {
     top: 10px;
@@ -272,11 +272,11 @@ onUnmounted(() => {
     left: 10px;
     max-width: none;
   }
-  
+
   .notification {
     padding: 12px;
   }
-  
+
   .notification-actions {
     flex-direction: column;
   }

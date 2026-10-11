@@ -1,14 +1,14 @@
 <template>
   <div class="message-filters">
     <div class="filter-group">
-      <label for="application-filter" class="filter-label">Application:</label>
-      <select 
-        id="application-filter" 
-        v-model="filters.applicationId" 
+      <label for="application-filter" class="filter-label">{{ $t('common.applications') }}:</label>
+      <select
+        id="application-filter"
+        v-model="filters.applicationId"
         class="filter-select"
         @change="emitFilterChange"
       >
-        <option value="">All Applications</option>
+        <option value="">{{ $t('common.allApplications') }}</option>
         <option v-for="app in applications" :key="app.id" :value="app.id">
           {{ app.name }}
         </option>
@@ -16,37 +16,37 @@
     </div>
 
     <div class="filter-group">
-      <label for="priority-filter" class="filter-label">Priority:</label>
-      <select 
-        id="priority-filter" 
-        v-model="filters.priority" 
+      <label for="priority-filter" class="filter-label">{{ $t('common.priority') }}:</label>
+      <select
+        id="priority-filter"
+        v-model="filters.priority"
         class="filter-select"
         @change="emitFilterChange"
       >
-        <option value="">All Priorities</option>
-        <option value="0">Low</option>
-        <option value="1">Normal</option>
-        <option value="2">High</option>
-        <option value="3">Emergency</option>
+        <option value="">{{ $t('common.allPriorities') }}</option>
+        <option value="0">{{ $t('common.priorityLow') }}</option>
+        <option value="1">{{ $t('common.priorityNormal') }}</option>
+        <option value="2">{{ $t('common.priorityHigh') }}</option>
+        <option value="3">{{ $t('common.priorityEmergency') }}</option>
       </select>
     </div>
 
     <div class="filter-group">
-      <label for="search-filter" class="filter-label">Search:</label>
+      <label for="search-filter" class="filter-label">{{ $t('common.search') }}:</label>
       <div class="search-input-container">
-        <input 
+        <input
           id="search-filter"
           v-model="filters.search"
           type="text"
-          placeholder="Search messages..."
+          :placeholder="$t('messages.searchPlaceholder')"
           class="search-input"
           @input="debounceSearch"
         />
-        <button 
-          v-if="filters.search" 
-          @click="clearSearch" 
+        <button
+          v-if="filters.search"
+          @click="clearSearch"
           class="clear-search-btn"
-          title="Clear search"
+          :title="$t('messages.clearSearch')"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -57,7 +57,7 @@
     </div>
 
     <div class="filter-actions">
-      <button @click="resetFilters" class="reset-btn">Reset Filters</button>
+      <button @click="resetFilters" class="reset-btn">{{ $t('messages.resetFilters') }}</button>
     </div>
   </div>
 </template>
@@ -98,10 +98,10 @@ const debounceSearch = () => {
   if (searchTimeout) {
     clearTimeout(searchTimeout)
   }
-  
+
   searchTimeout = setTimeout(() => {
     emitFilterChange()
-  }, 300) // 300ms debounce
+  }, 300)
 }
 
 const clearSearch = () => {
@@ -118,23 +118,23 @@ const resetFilters = () => {
   emitFilterChange()
 }
 
-// Watch for URL query parameters to sync with filters
+
 onMounted(() => {
   const urlParams = new URLSearchParams(window.location.search)
-  
+
   if (urlParams.has('appId')) {
     filters.value.applicationId = urlParams.get('appId') || ''
   }
-  
+
   if (urlParams.has('priority')) {
     filters.value.priority = urlParams.get('priority') || ''
   }
-  
+
   if (urlParams.has('search')) {
     filters.value.search = urlParams.get('search') || ''
   }
-  
-  // Emit initial filters
+
+
   emitFilterChange()
 })
 
@@ -151,9 +151,9 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 1rem;
   padding: 1rem;
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.5rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   margin-bottom: 1rem;
 }
 
@@ -168,16 +168,16 @@ onUnmounted(() => {
 .filter-label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-secondary);
 }
 
 .filter-select {
   padding: 0.5rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
-  background-color: white;
+  background-color: var(--color-bg-primary);
   font-size: 0.875rem;
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .search-input-container {
@@ -187,10 +187,11 @@ onUnmounted(() => {
 .search-input {
   width: 100%;
   padding: 0.5rem 2rem 0.5rem 0.5rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   font-size: 0.875rem;
-  color: #1f2937;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 .clear-search-btn {
@@ -200,7 +201,7 @@ onUnmounted(() => {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   cursor: pointer;
   padding: 0.25rem;
   border-radius: 0.25rem;
@@ -210,8 +211,8 @@ onUnmounted(() => {
 }
 
 .clear-search-btn:hover {
-  background-color: #f3f4f6;
-  color: #1f2937;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-primary);
 }
 
 .filter-actions {
@@ -222,9 +223,9 @@ onUnmounted(() => {
 
 .reset-btn {
   padding: 0.5rem 1rem;
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
@@ -234,20 +235,20 @@ onUnmounted(() => {
 }
 
 .reset-btn:hover {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
-/* Responsive Design */
+
 @media (max-width: 768px) {
   .message-filters {
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .filter-group {
     min-width: auto;
   }
-  
+
   .filter-actions {
     padding-left: 0;
     justify-content: center;

@@ -7,7 +7,7 @@
       </div>
 
       <form @submit.prevent="onSubmit" class="profile-form">
-        <!-- Avatar Section -->
+
         <div class="avatar-section">
           <EditableAvatar
             :user="localUser"
@@ -18,7 +18,7 @@
           <div v-if="avatarError" class="error-text">{{ avatarError }}</div>
         </div>
 
-        <!-- Nickname -->
+
         <div class="form-field">
           <label for="nickname">{{ t('editProfile.nickname') }} *</label>
           <input
@@ -30,7 +30,7 @@
           />
         </div>
 
-        <!-- Email -->
+
         <div class="form-field">
           <label for="email">{{ t('editProfile.email') }} *</label>
           <input
@@ -44,7 +44,7 @@
           <div v-if="emailError" class="error-text">{{ emailError }}</div>
         </div>
 
-        <!-- Description -->
+
         <div class="form-field">
           <label for="description">{{ t('editProfile.description') }}</label>
           <textarea
@@ -55,7 +55,7 @@
           ></textarea>
         </div>
 
-        <!-- Form Actions -->
+
         <div class="form-actions">
           <button type="button" @click="showChangePassword" class="btn-link">
             {{ t('editProfile.changePassword') }}
@@ -69,7 +69,7 @@
       </form>
     </div>
 
-    <!-- Change Password Modal -->
+
     <ChangePasswordModal
       v-if="showPasswordModal"
       @close="showPasswordModal = false"
@@ -88,9 +88,9 @@ import ChangePasswordModal from './ChangePasswordModal.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useAlert } from '@/composables/useAlert'
 
-/**
- * 获取 i18n 翻译函数
- */
+
+
+
 const { t } = useI18n()
 
 interface Props {
@@ -113,7 +113,7 @@ const avatarError = ref('')
 const isSubmitting = ref(false)
 const showPasswordModal = ref(false)
 
-// Watch for prop changes
+
 watch(() => props.user, (newUser) => {
   localUser.value = { ...newUser }
 }, { deep: true })
@@ -129,10 +129,10 @@ const isFormValid = computed(() => {
   )
 })
 
-/**
- * 验证邮箱格式
- * @returns 是否验证通过
- */
+
+
+
+
 const validateEmail = () => {
   const email = localUser.value.email.trim()
   if (!email) {
@@ -147,19 +147,19 @@ const validateEmail = () => {
   return true
 }
 
-/**
- * 处理头像上传
- * @param file - 上传的文件
- */
+
+
+
+
 const handleAvatarUpload = async (file: File) => {
-  // 验证文件类型
+
   if (!file.type.startsWith('image/')) {
     avatarError.value = t('editProfile.invalidImageType')
     return
   }
 
-  // 验证文件大小 (2MB)
-  if (file.size > 2 * 1024 * 1024) {
+
+  if (file.size > 1 * 1024 * 1024) {
     avatarError.value = t('editProfile.imageTooLarge')
     return
   }
@@ -178,9 +178,9 @@ const handleAvatarUpload = async (file: File) => {
   }
 }
 
-/**
- * 删除头像
- */
+
+
+
 const deleteAvatar = async () => {
   const confirmed = await confirmDialog({
     title: t('editProfile.deleteAvatarConfirmTitle'),
@@ -189,7 +189,7 @@ const deleteAvatar = async () => {
     cancelText: t('common.cancel'),
     type: 'warning'
   })
-  
+
   if (!confirmed) return
 
   isSubmitting.value = true
@@ -249,7 +249,7 @@ const onClose = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -257,7 +257,7 @@ const onClose = () => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 12px;
   padding: 24px;
   width: 90%;
@@ -277,6 +277,7 @@ const onClose = () => {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .close-btn {
@@ -284,17 +285,18 @@ const onClose = () => {
   border: none;
   font-size: 24px;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 0;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: var(--theme-transition);
 }
 
 .close-btn:hover {
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .profile-form {
@@ -309,7 +311,7 @@ const onClose = () => {
   align-items: center;
   gap: 16px;
   padding: 20px;
-  background: #f9fafb;
+  background: var(--color-bg-tertiary);
   border-radius: 8px;
 }
 
@@ -322,26 +324,28 @@ const onClose = () => {
 .form-field label {
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-secondary);
 }
 
 .form-field input,
 .form-field textarea {
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 6px;
   font-size: 14px;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
   transition: border-color 0.2s;
 }
 
 .form-field input:focus,
 .form-field textarea:focus {
   outline: none;
-  border-color: #3b82f6;
+  border-color: var(--color-border-focus);
 }
 
 .form-field input.error {
-  border-color: #ef4444;
+  border-color: var(--color-error);
 }
 
 .form-field textarea {
@@ -350,7 +354,7 @@ const onClose = () => {
 }
 
 .error-text {
-  color: #ef4444;
+  color: var(--color-error);
   font-size: 12px;
 }
 
@@ -363,9 +367,9 @@ const onClose = () => {
 
 .btn-secondary {
   padding: 10px 20px;
-  background: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: var(--color-bg-primary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
@@ -373,13 +377,13 @@ const onClose = () => {
 }
 
 .btn-secondary:hover {
-  background: #f9fafb;
+  background: var(--color-bg-tertiary);
 }
 
 .btn-primary {
   padding: 10px 20px;
-  background: #3b82f6;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -388,7 +392,7 @@ const onClose = () => {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--color-primary-hover);
 }
 
 .btn-primary:disabled {
@@ -399,7 +403,7 @@ const onClose = () => {
 .btn-link {
   background: none;
   border: none;
-  color: #3b82f6;
+  color: var(--color-primary);
   cursor: pointer;
   padding: 0;
   font-size: 14px;

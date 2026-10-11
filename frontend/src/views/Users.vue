@@ -31,13 +31,13 @@
               <button @click="deleteUser(user.id)" class="delete-btn">{{ $t('common.delete') }}</button>
             </div>
           </div>
-          
+
           <div v-if="expandedUsers.has(user.id)" class="user-details">
             <div v-if="loadingDetails.has(user.id)" class="details-loading">
               {{ $t('common.loading') }}
             </div>
             <div v-else class="details-content">
-              <!-- Applications -->
+
               <div class="detail-section">
                 <h4>{{ $t('common.applications') }} ({{ getUserDetails(user.id)?.applications?.length || 0 }})</h4>
                 <div v-if="getUserDetails(user.id)?.applications?.length" class="detail-list">
@@ -49,7 +49,7 @@
                 <div v-else class="empty-detail">{{ $t('users.noApplications') }}</div>
               </div>
 
-              <!-- Clients -->
+
               <div class="detail-section">
                 <h4>{{ $t('common.clients') }} ({{ getUserDetails(user.id)?.clients?.length || 0 }})</h4>
                 <div v-if="getUserDetails(user.id)?.clients?.length" class="detail-list">
@@ -61,7 +61,7 @@
                 <div v-else class="empty-detail">{{ $t('users.noClients') }}</div>
               </div>
 
-              <!-- Plugins -->
+
               <div class="detail-section">
                 <div class="detail-header">
                   <h4>{{ $t('common.plugins') }} ({{ getUserDetails(user.id)?.plugins?.length || 0 }})</h4>
@@ -100,25 +100,25 @@
                 <div v-else class="empty-detail">{{ $t('users.noPlugins') }}</div>
               </div>
 
-              <!-- Plugin Permissions -->
+
               <div class="detail-section plugin-permissions-section">
                 <h4>{{ $t('users.pluginPermissions') }}</h4>
                 <div class="plugin-permissions-list">
-                  <label 
-                    v-for="pluginPath in availablePlugins" 
-                    :key="pluginPath" 
+                  <label
+                    v-for="plugin in availablePlugins"
+                    :key="plugin.modulePath"
                     class="plugin-permission-item"
                   >
-                    <input 
-                      type="checkbox" 
-                      :checked="userPermissions.get(user.id)?.has(pluginPath)"
-                      @change="togglePluginPermission(user.id, pluginPath, $event)"
+                    <input
+                      type="checkbox"
+                      :checked="userPermissions.get(user.id)?.has(plugin.modulePath)"
+                      @change="togglePluginPermission(user.id, plugin.modulePath, $event)"
                     />
-                    <span class="plugin-path">{{ getPluginDisplayName(pluginPath) }}</span>
+                    <span class="plugin-path">{{ plugin.name }}</span>
                   </label>
                 </div>
-                <button 
-                  @click="savePluginPermissions(user.id)" 
+                <button
+                  @click="savePluginPermissions(user.id)"
                   class="save-permissions-btn"
                   :disabled="savingPermissions.has(user.id)"
                 >
@@ -181,9 +181,12 @@ import CreatePluginModal from '@/components/CreatePluginModal.vue'
 import EditPluginModal from '@/components/EditPluginModal.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { userApi, pluginApi } from '@/services/api'
+import { withElevationRetry } from '@/services/auth'
+import { isElevationCancelled } from '@/composables/useElevatedAction'
 import { showSuccess, showError } from '@/utils/errorHandler'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
-import type { User, Application, Client, Plugin } from '@/types'
+import { formatDate } from '@/utils/datetime'
+import type { User, Application, Client, Plugin, AvailablePlugin } from '@/types'
 
 const { t } = useI18n()
 const { confirm: confirmDialog } = useConfirmDialog()
@@ -194,8 +197,18 @@ interface UserDetails {
   plugins: Plugin[]
 }
 
-// Available builtin plugins
-const availablePlugins = ['builtin/webhooker', 'builtin/displayer']
+
+const availablePlugins = ref<AvailablePlugin[]>([])
+
+
+const loadAvailablePlugins = async () => {
+  try {
+    const res = await pluginApi.getAvailablePlugins()
+    availablePlugins.value = res.data
+  } catch (err) {
+    console.error('Failed to load available plugins:', err)
+  }
+}
 
 const users = ref<User[]>([])
 const loading = ref(true)
@@ -213,19 +226,13 @@ const deletingUserPlugin = ref<{ userId: number; pluginId: number } | null>(null
 const showEditPluginModal = ref(false)
 const editingPlugin = ref<Plugin | null>(null)
 
-const getPluginDisplayName = (modulePath: string): string => {
-  const names: Record<string, string> = {
-    'builtin/webhooker': 'Webhooker',
-    'builtin/displayer': 'Displayer'
-  }
-  return names[modulePath] || modulePath
-}
-
 const loadUsers = async () => {
   try {
-    const res = await userApi.getUsers()
+
+    const res = await withElevationRetry(() => userApi.getUsers())
     users.value = res.data || []
   } catch (err) {
+    if (isElevationCancelled(err)) return
     console.error('Failed to load users:', err)
   } finally {
     loading.value = false
@@ -252,13 +259,15 @@ const deleteUser = async (id: number) => {
     cancelText: t('common.confirmDialog.cancelButton'),
     type: 'danger'
   })
-  
+
   if (confirmed) {
     try {
-      await userApi.deleteUser(id)
+
+      await withElevationRetry(() => userApi.deleteUser(id))
       showSuccess(t('users.deleteSuccess'))
       await reloadUsers()
     } catch (err: any) {
+      if (isElevationCancelled(err)) return
       console.error('Failed to delete user:', err)
       showError(err, t('users.deleteError'))
     }
@@ -302,7 +311,7 @@ const toggleUserDetails = async (userId: number) => {
   } else {
     expandedUsers.value.add(userId)
     expandedUsers.value = new Set(expandedUsers.value)
-    
+
     if (!userDetailsCache.has(userId)) {
       await loadUserDetails(userId)
     }
@@ -312,7 +321,7 @@ const toggleUserDetails = async (userId: number) => {
 const loadUserDetails = async (userId: number) => {
   loadingDetails.value.add(userId)
   loadingDetails.value = new Set(loadingDetails.value)
-  
+
   try {
     const [appsRes, clientsRes, pluginsRes, permissionsRes] = await Promise.all([
       userApi.getUserApplications(userId),
@@ -320,14 +329,14 @@ const loadUserDetails = async (userId: number) => {
       userApi.getUserPlugins(userId),
       userApi.getPluginPermissions(userId)
     ])
-    
+
     userDetailsCache.set(userId, {
       applications: appsRes.data || [],
       clients: clientsRes.data || [],
       plugins: pluginsRes.data || []
     })
-    
-    // Store permissions as a Set for easy lookup
+
+
     userPermissions.set(userId, new Set(permissionsRes.data || []))
   } catch (err) {
     console.error('Failed to load user details:', err)
@@ -346,20 +355,20 @@ const loadUserDetails = async (userId: number) => {
 const togglePluginPermission = (userId: number, pluginPath: string, event: Event) => {
   const checkbox = event.target as HTMLInputElement
   const permissions = userPermissions.get(userId) || new Set()
-  
+
   if (checkbox.checked) {
     permissions.add(pluginPath)
   } else {
     permissions.delete(pluginPath)
   }
-  
+
   userPermissions.set(userId, new Set(permissions))
 }
 
 const savePluginPermissions = async (userId: number) => {
   savingPermissions.value.add(userId)
   savingPermissions.value = new Set(savingPermissions.value)
-  
+
   try {
     const permissions = userPermissions.get(userId) || new Set()
     await userApi.updatePluginPermissions(userId, Array.from(permissions))
@@ -412,13 +421,9 @@ const openEditPluginModal = (plugin: Plugin) => {
   showEditPluginModal.value = true
 }
 
-const formatDate = (dateString: string | null) => {
-  if (!dateString) return ''
-  return new Date(dateString).toLocaleString()
-}
-
-onMounted(() => {
-  loadUsers()
+onMounted(async () => {
+  await loadUsers()
+  await loadAvailablePlugins()
 })
 </script>
 
@@ -438,27 +443,27 @@ onMounted(() => {
 .page-title {
   font-size: 2rem;
   font-weight: bold;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .create-btn {
   padding: 0.5rem 1rem;
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .create-btn:hover {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .loading, .empty-state {
   text-align: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 3rem;
   font-size: 1rem;
 }
@@ -470,9 +475,9 @@ onMounted(() => {
 }
 
 .user-card {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -497,24 +502,24 @@ onMounted(() => {
 .user-text h3 {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0 0 0.25rem 0;
 }
 
 .user-email {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
   margin: 0 0 0.25rem 0;
 }
 
 .user-role {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
   margin: 0 0 0.25rem 0;
 }
 
 .user-description {
-  color: #4b5563;
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
   margin: 0;
   font-style: italic;
@@ -529,12 +534,12 @@ onMounted(() => {
 .toggle-btn {
   padding: 0.375rem 0.75rem;
   background-color: #6366f1;
-  color: white;
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .toggle-btn:hover {
@@ -543,43 +548,43 @@ onMounted(() => {
 
 .edit-btn {
   padding: 0.375rem 0.75rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .edit-btn:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .delete-btn {
   padding: 0.375rem 0.75rem;
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .delete-btn:hover {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .user-details {
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-primary);
   padding: 1.5rem;
-  background-color: #f9fafb;
+  background-color: var(--color-bg-tertiary);
 }
 
 .details-loading {
   text-align: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 1rem;
 }
 
@@ -590,19 +595,19 @@ onMounted(() => {
 }
 
 .detail-section {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.5rem;
   padding: 1rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-sm);
 }
 
 .detail-section h4 {
   font-size: 0.875rem;
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text-secondary);
   margin: 0 0 0.75rem 0;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .detail-list {
@@ -616,7 +621,7 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem;
-  background-color: #f3f4f6;
+  background-color: var(--color-bg-hover);
   border-radius: 0.375rem;
 }
 
@@ -635,12 +640,12 @@ onMounted(() => {
 
 .item-name {
   font-weight: 500;
-  color: #1f2937;
+  color: var(--color-text-primary);
   font-size: 0.875rem;
 }
 
 .item-desc {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.75rem;
 }
 
@@ -661,7 +666,7 @@ onMounted(() => {
 }
 
 .empty-detail {
-  color: #9ca3af;
+  color: var(--color-text-muted);
   font-size: 0.875rem;
   text-align: center;
   padding: 0.5rem;
@@ -683,14 +688,14 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
-  background-color: #f3f4f6;
+  background-color: var(--color-bg-hover);
   border-radius: 0.375rem;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .plugin-permission-item:hover {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .plugin-permission-item input[type="checkbox"] {
@@ -701,30 +706,30 @@ onMounted(() => {
 
 .plugin-path {
   font-size: 0.875rem;
-  color: #374151;
+  color: var(--color-text-secondary);
 }
 
 .save-permissions-btn {
   padding: 0.5rem 1rem;
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .save-permissions-btn:hover:not(:disabled) {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .save-permissions-btn:disabled {
-  background-color: #9ca3af;
+  background-color: var(--color-text-muted);
   cursor: not-allowed;
 }
 
-/* Plugin management styles in user details */
+
 .detail-header {
   display: flex;
   justify-content: space-between;
@@ -738,49 +743,47 @@ onMounted(() => {
 
 .add-plugin-small-btn {
   padding: 0.25rem 0.75rem;
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .add-plugin-small-btn:hover {
-  background-color: #059669;
+  background-color: var(--color-success-hover);
 }
 
 .edit-plugin-small-btn {
   padding: 0.25rem 0.5rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.75rem;
-  transition: background-color 0.2s;
-  /* margin-right: 0.25rem;
-  margin-right: auto; */
+  transition: var(--theme-transition);
 }
 
 .edit-plugin-small-btn:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .delete-plugin-small-btn {
   padding: 0.25rem 0.5rem;
   background-color: #f87171;
-  color: white;
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
   font-size: 0.75rem;
-  transition: background-color 0.2s;
+  transition: var(--theme-transition);
 }
 
 .delete-plugin-small-btn:hover:not(:disabled) {
-  background-color: #ef4444;
+  background-color: var(--color-error);
 }
 
 .delete-plugin-small-btn:disabled {
@@ -790,24 +793,24 @@ onMounted(() => {
 
 .disable-btn {
   padding: 0.375rem 0.75rem;
-  color: white;
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
-  transition: background-color 0.2s;
-  &.enabled {
-    background-color: #10b981;
-    &:hover {
-      background-color: #059669;
-    }
-  }
-  &.disabled {
-    background-color: #f59e0b;
-    &:hover {
-      background-color: #d97706;
-    }
-  }
+  transition: var(--theme-transition);
+}
+.disable-btn.enabled {
+  background-color: var(--color-success);
+}
+.disable-btn.enabled:hover {
+  background-color: var(--color-success-hover);
+}
+.disable-btn.disabled {
+  background-color: var(--color-warning);
+}
+.disable-btn.disabled:hover {
+  background-color: var(--color-warning-hover);
 }
 
 @media (max-width: 768px) {

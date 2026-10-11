@@ -54,6 +54,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useAlert } from '@/composables/useAlert'
+import { resolveMediaUrl } from '@/utils/mediaUrl'
 
 interface Props {
   name: string
@@ -86,7 +87,7 @@ const fileInput = ref<HTMLInputElement>()
 const imageError = ref(false)
 const imageLoaded = ref(false)
 
-// Watch icon prop changes, reset state
+
 watch(() => props.icon, () => {
   imageError.value = false
   imageLoaded.value = false
@@ -96,17 +97,7 @@ const hasImage = computed(() => {
   return props.icon && !imageError.value && imageLoaded.value
 })
 
-const imageSrc = computed(() => {
-  if (!props.icon) return ''
-
-  // If icon is a URL or data URL, use as is
-  if (props.icon.startsWith('http') || props.icon.startsWith('data:')) {
-    return props.icon
-  }
-
-  // Otherwise, treat as relative path
-  return props.icon
-})
+const imageSrc = computed(() => resolveMediaUrl(props.icon))
 
 const triggerFileInput = () => {
   if (props.uploading) return
@@ -118,13 +109,13 @@ const handleFileChange = async (event: Event) => {
   const file = target.files?.[0]
 
   if (file) {
-    // Validate file type
+
     if (!file.type.startsWith('image/')) {
       await warning(t('plugins.invalidFileType'))
       return
     }
 
-    // Validate file size (max 1MB)
+
     if (file.size > 1 * 1024 * 1024) {
       await warning(t('plugins.fileTooLarge'))
       return
@@ -133,7 +124,7 @@ const handleFileChange = async (event: Event) => {
     emit('upload', file)
   }
 
-  // Reset input value to allow selecting the same file again
+
   target.value = ''
 }
 
@@ -153,7 +144,7 @@ const deleteImage = async () => {
     cancelText: t('common.confirmDialog.cancelButton'),
     type: 'warning'
   })
-  
+
   if (confirmed) {
     emit('delete')
   }
@@ -168,7 +159,7 @@ const deleteImage = async () => {
   justify-content: center;
   border-radius: 8px;
   overflow: hidden;
-  background-color: #f3f4f6;
+  background-color: var(--color-bg-hover);
   transition: all 0.2s;
 }
 
@@ -206,7 +197,7 @@ const deleteImage = async () => {
   justify-content: center;
   width: 100%;
   height: 100%;
-  color: #9ca3af;
+  color: var(--color-text-muted);
 }
 
 .upload-overlay {
@@ -215,7 +206,7 @@ const deleteImage = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,7 +224,7 @@ const deleteImage = async () => {
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  color: white;
+  color: var(--color-text-inverse);
   font-size: 0.875rem;
   font-weight: 500;
 }
@@ -244,16 +235,16 @@ const deleteImage = async () => {
   right: -8px;
   width: 24px;
   height: 24px;
-  background-color: #ef4444;
-  color: white;
-  border: 2px solid white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
+  border: 2px solid var(--color-text-inverse);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background-color 0.2s;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -262,7 +253,7 @@ const deleteImage = async () => {
 }
 
 .delete-button:hover {
-  background-color: #dc2626;
+  background-color: var(--color-error-hover);
 }
 
 .file-input {

@@ -7,7 +7,7 @@
       </div>
 
       <div class="modal-body">
-        <!-- Icon Section -->
+
         <div class="form-group">
           <label>{{ $t('plugins.icon') }}</label>
           <PluginIcon
@@ -22,7 +22,7 @@
           />
         </div>
 
-        <!-- Name Section -->
+
         <div class="form-group">
           <label for="plugin-name">{{ $t('plugins.name') }}</label>
           <input
@@ -33,7 +33,7 @@
           />
         </div>
 
-        <!-- Config Section -->
+
         <div class="form-group">
           <label for="plugin-config">{{ $t('plugins.configuration') }}</label>
           <textarea
@@ -85,12 +85,12 @@ const saving = ref(false)
 const uploadingIcon = ref(false)
 const localIcon = ref<string | undefined>()
 
-// Sync props.plugin.icon to localIcon (with immediate execution)
+
 watch(() => props.plugin?.icon, (newIcon) => {
   localIcon.value = newIcon
 }, { immediate: true })
 
-// Load plugin config when modal opens
+
 watch(() => props.show, async (isOpen) => {
   if (isOpen && props.plugin) {
     editedName.value = props.plugin.name
@@ -138,11 +138,11 @@ const save = async () => {
 
   saving.value = true
   try {
-    // Update name if changed
+
     if (editedName.value !== props.plugin.name) {
       await pluginApi.updateName(props.plugin.id, editedName.value)
     }
-    // Update config
+
     await pluginApi.updateConfig(props.plugin.id, editedConfig.value)
     showSuccess(t('plugins.updateSucceeded'))
     emit('updated')
@@ -162,7 +162,7 @@ const save = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,13 +170,13 @@ const save = async () => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
   width: 90%;
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-lg);
 }
 
 .modal-header {
@@ -184,13 +184,14 @@ const save = async () => {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .modal-header h2 {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .close-btn {
@@ -198,14 +199,15 @@ const save = async () => {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 0;
   width: 2rem;
   height: 2rem;
+  transition: var(--theme-transition);
 }
 
 .close-btn:hover {
-  color: #1f2937;
+  color: var(--color-text-primary);
 }
 
 .modal-body {
@@ -222,37 +224,43 @@ const save = async () => {
 .form-group label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #374151;
+  color: var(--color-text-secondary);
 }
 
 .form-group .input {
   padding: 0.625rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   font-size: 0.875rem;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: var(--theme-transition);
 }
 
 .form-group .input:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .config-textarea {
   width: 100%;
   min-height: 200px;
   padding: 0.75rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   font-family: 'Courier New', monospace;
   font-size: 0.875rem;
   resize: vertical;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: var(--theme-transition);
 }
 
 .config-textarea:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
 .modal-footer {
@@ -260,20 +268,22 @@ const save = async () => {
   justify-content: flex-end;
   gap: 0.75rem;
   padding: 1rem 1.5rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--color-border-primary);
 }
 
 .cancel-btn {
   padding: 0.5rem 1rem;
-  background: #f3f4f6;
+  background: var(--color-bg-hover);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: var(--theme-transition);
 }
 
 .cancel-btn:hover {
-  background: #e5e7eb;
+  background: var(--color-bg-active);
 }
 
 .save-btn {
@@ -281,16 +291,17 @@ const save = async () => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: #3b82f6;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
   font-weight: 500;
+  transition: var(--theme-transition);
 }
 
 .save-btn:hover:not(:disabled) {
-  background: #2563eb;
+  background: var(--color-primary-hover);
 }
 
 .save-btn:disabled {

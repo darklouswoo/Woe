@@ -4,18 +4,7 @@
       <h3 class="title">{{ t('users.changePassword') }}</h3>
     </template>
     <form @submit.prevent="onSubmit" class="form">
-      <!-- 旧密码 -->
-      <label class="field">
-        <span>{{ t('users.currentPassword') }}</span>
-        <input
-          v-model="oldPassword"
-          type="password"
-          required
-          :placeholder="t('users.placeholder.currentPassword')"
-        />
-      </label>
 
-      <!-- 新密码 -->
       <label class="field">
         <span>{{ t('users.newPassword') }}</span>
         <input
@@ -26,7 +15,7 @@
           @input="onPasswordInput"
         />
         <div v-if="newPassword && passwordValidation" class="password-feedback">
-          <!-- 强度条 -->
+
           <div class="strength-bar">
             <div
               class="strength-fill"
@@ -45,7 +34,7 @@
         </div>
       </label>
 
-      <!-- 确认新密码 -->
+
       <label class="field">
         <span>{{ t('users.confirmPassword') }}</span>
         <input
@@ -66,7 +55,7 @@
       <button
         class="btn primary"
         @click="onSubmit"
-        :disabled="submitting || !oldPassword || !newPassword || !confirmPassword || !isFormValid"
+        :disabled="submitting || !newPassword || !confirmPassword || !isFormValid"
       >
         {{ submitting ? t('users.updating') : t('common.save') }}
       </button>
@@ -79,6 +68,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseModal from './BaseModal.vue'
 import { userApi } from '@/services/api'
+import { useElevatedAction, isElevationCancelled } from '@/composables/useElevatedAction'
 import {
   validatePassword,
   getPasswordStrengthColor,
@@ -90,7 +80,7 @@ import {
 const emit = defineEmits<{ (e: 'close'): void; (e: 'updated'): void }>()
 
 const { t } = useI18n()
-const oldPassword = ref('')
+const { withElevation } = useElevatedAction()
 const newPassword = ref('')
 const confirmPassword = ref('')
 const passwordValidation = ref<PasswordValidationResult | null>(null)
@@ -128,7 +118,7 @@ const onClose = () => emit('close')
 const onSubmit = async () => {
   error.value = ''
 
-  if (!oldPassword.value || !newPassword.value || !confirmPassword.value) {
+  if (!newPassword.value || !confirmPassword.value) {
     error.value = t('users.fieldRequired', { field: t('common.password') })
     return
   }
@@ -146,14 +136,18 @@ const onSubmit = async () => {
 
   submitting.value = true
   try {
-    await userApi.updateCurrentUserPassword({
-      oldPassword: oldPassword.value,
-      newPassword: newPassword.value
-    })
+
+    await withElevation(() =>
+      userApi.updateCurrentUserPassword({
+        pass: newPassword.value
+      })
+    )
     emit('updated')
     emit('close')
   } catch (e: any) {
-    error.value = e?.errorDescription || t('users.updatePasswordError')
+    if (!isElevationCancelled(e)) {
+      error.value = e?.errorDescription || t('users.updatePasswordError')
+    }
   } finally {
     submitting.value = false
   }
@@ -161,39 +155,55 @@ const onSubmit = async () => {
 </script>
 
 <style scoped>
-.title { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.title { margin: 0; font-size: 1.125rem; font-weight: 600; color: var(--color-text-primary); }
 .form { display: flex; flex-direction: column; gap: 0.75rem; }
 .field { display: flex; flex-direction: column; gap: 0.375rem; }
-.field span { color: #374151; font-size: 0.875rem; }
+.field span { color: var(--color-text-secondary); font-size: 0.875rem; }
 input {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-primary);
   border-radius: 0.375rem;
   padding: 0.5rem;
   font-size: 0.875rem;
   font-family: inherit;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  transition: var(--theme-transition);
+}
+input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
 }
 .field-error {
-  color: #ef4444;
+  color: var(--color-error);
   font-size: 0.75rem;
   margin-top: 0.25rem;
 }
-.error { color: #b91c1c; font-size: 0.875rem; margin: 0; }
-.btn { padding: 0.5rem 1rem; border: none; border-radius: 0.375rem; cursor: pointer; background: #e5e7eb; }
-.btn.primary { background: #10b981; color: white; }
+.error { color: var(--color-error); font-size: 0.875rem; margin: 0; }
+.btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  background: var(--color-bg-active);
+  color: var(--color-text-secondary);
+  transition: var(--theme-transition);
+}
+.btn.primary { background: var(--color-success); color: var(--color-text-inverse); }
+.btn.primary:hover { background: var(--color-success-hover); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .password-feedback { margin-top: 0.5rem; }
 .strength-bar {
   width: 100%;
   height: 4px;
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 0.25rem;
 }
 .strength-fill { height: 100%; transition: width 0.3s ease, background-color 0.3s ease; }
 .strength-text { font-size: 0.75rem; font-weight: 500; margin-bottom: 0.25rem; }
-.error-list { list-style: none; padding: 0; margin: 0.25rem 0 0 0; font-size: 0.75rem; color: #ef4444; }
+.error-list { list-style: none; padding: 0; margin: 0.25rem 0 0 0; font-size: 0.75rem; color: var(--color-error); }
 .error-list li { padding: 0.125rem 0; }
 .error-list li::before { content: '• '; margin-right: 0.25rem; }
 </style>

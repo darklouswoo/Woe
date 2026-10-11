@@ -4,6 +4,7 @@ export interface PluginContext {
   message?: {
     id: number
     appId: number
+    date?: string
     title?: string
     priority?: number
     content: string
@@ -15,6 +16,24 @@ export interface PluginContext {
 
 export interface PluginInitOptions {
   config: Record<string, any> | undefined
+  pushOutbox?: {
+    enqueueForUserDevices(input: {
+      userId: number
+      messageId: number
+      appid: number
+      date: string
+      platform: string
+      title?: string
+      message: string
+      priority?: number
+      extras?: Record<string, any>
+    }): Promise<{
+
+      count: number
+
+      outboxIds: number[]
+    }>
+  }
 }
 
 export interface ExecutablePlugin {
@@ -30,3 +49,36 @@ export interface ExecutablePlugin {
   configExample?: string
 }
 
+
+
+
+
+
+
+
+
+export interface FilterConfig {
+
+  tags?: string[]
+
+  minPriority?: number
+}
+
+
+
+
+
+export interface FilterTags {
+
+  tags: string[]
+}
+
+
+
+
+export interface FilterResult {
+
+  allowed: boolean
+
+  reason?: string
+}

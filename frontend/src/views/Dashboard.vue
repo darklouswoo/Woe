@@ -65,13 +65,13 @@
             <router-link to="/messages" class="view-all">{{ $t('dashboard.viewAll') }}</router-link>
           </div>
           <div class="messages-list">
-            <div v-for="message in recentMessages" :key="message.id" class="message-item">
+            <div v-for="message in recentMessages" :key="message.id" class="message-item" @click="openMessageDetail(message)">
               <div class="message-header">
                 <h4>{{ message.title }}</h4>
-                <span class="message-time">{{ formatTime(message.date) }}</span>
+                <span class="message-time" :title="formatDateTime(message.date)">{{ formatRelativeTime(message.date) }}</span>
               </div>
               <p class="message-content">{{ message.message }}</p>
-              <div class="message-priority priority-{{ message.priority }}">
+              <div class="message-priority" :class="`priority-${Math.min(message.priority ?? 1, 3)}`">
                 {{ getPriorityLabel(message.priority) }}
               </div>
             </div>
@@ -99,7 +99,7 @@
             </div>
             <div class="status-item">
               <span class="status-label">{{ $t('common.buildDate') }}</span>
-              <span class="status-value">{{ formatDate(systemVersion.buildDate) }}</span>
+              <span class="status-value">{{ formatDate(systemVersion.buildDate) || t('common.unknown') }}</span>
             </div>
             <div class="status-item">
               <span class="status-label">{{ $t('common.websocket') }}</span>
@@ -111,6 +111,13 @@
         </div>
       </div>
     </div>
+
+    <MessageDetailModal
+      v-if="showDetailModal && selectedMessage"
+      :message="selectedMessage"
+      @close="closeMessageDetail"
+      @deleted="handleMessageDeleted"
+    />
   </Layout>
 </template>
 
@@ -118,10 +125,14 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Layout from '@/components/Layout.vue'
+import MessageDetailModal from '@/components/MessageDetailModal.vue'
 import { useMessagesStore } from '@/stores/messages'
 import { useAuthStore } from '@/stores/auth'
-import { systemApi, applicationApi, clientApi, userApi } from '@/services/api'
+import { systemApi, applicationApi, clientApi, userApi, messageApi } from '@/services/api'
+import { withElevationRetry } from '@/services/auth'
+import { formatRelativeTime, formatDateTime, formatDate } from '@/utils/datetime'
 import { wsService } from '@/services/websocket'
+import type { Message } from '@/types'
 
 const { t } = useI18n()
 
@@ -140,18 +151,26 @@ const systemVersion = ref<any>({})
 const wsConnected = ref(false)
 let statusPollingInterval: number | null = null
 
+const showDetailModal = ref(false)
+const selectedMessage = ref<Message | null>(null)
+
+const openMessageDetail = (message: Message) => {
+  selectedMessage.value = message
+  showDetailModal.value = true
+}
+
+const closeMessageDetail = () => {
+  showDetailModal.value = false
+  selectedMessage.value = null
+}
+
+const handleMessageDeleted = () => {
+  closeMessageDetail()
+}
+
 const recentMessages = computed(() => {
   return messagesStore.messages.slice(0, 5)
 })
-
-const formatTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString()
-}
-
-const formatDate = (dateString: string) => {
-  if (!dateString) return t('common.unknown')
-  return new Date(dateString).toLocaleDateString()
-}
 
 const getPriorityLabel = (priority?: number) => {
   if (priority === undefined || priority === null) return t('common.priorityNormal')
@@ -166,7 +185,7 @@ const getPriorityLabel = (priority?: number) => {
 
 const loadDashboardData = async () => {
   try {
-    // 独立获取系统健康状态和版本信息，确保不被其他请求干扰
+
     await fetchSystemStatus()
 
     systemApi.getVersion()
@@ -175,11 +194,12 @@ const loadDashboardData = async () => {
       })
       .catch(err => console.error('Error loading version info:', err))
 
-    // 并行获取其他统计数据，但使用 Promise.allSettled 避免单个失败导致整体加载中断
+
+
     const results = await Promise.allSettled([
       applicationApi.getApplications(),
       clientApi.getClients(),
-      userApi.getUsers()
+      withElevationRetry(() => userApi.getUsers())
     ])
 
     const [appsRes, clientsRes, usersRes] = results
@@ -187,7 +207,7 @@ const loadDashboardData = async () => {
     if (appsRes.status === 'fulfilled') {
       stats.value.applications = appsRes.value.data?.length || 0
     }
-    
+
     if (clientsRes.status === 'fulfilled') {
       stats.value.clients = clientsRes.value.data?.length || 0
     }
@@ -196,12 +216,20 @@ const loadDashboardData = async () => {
       stats.value.users = usersRes.value.data?.length || 0
     }
 
-    // 独立加载消息列表
+
     try {
       await messagesStore.fetchMessages({ limit: 20 })
-      stats.value.messages = messagesStore.messages.length
     } catch (error) {
       console.error('Error loading recent messages:', error)
+    }
+
+
+    try {
+      const countRes = await messageApi.getMessageCount()
+      stats.value.messages = countRes.data.count
+    } catch (error) {
+      console.error('Error loading message count:', error)
+      stats.value.messages = messagesStore.messages.length
     }
 
   } catch (error) {
@@ -225,7 +253,7 @@ const handleWsStateChange = (state: 'disconnected' | 'connecting' | 'connected')
 onMounted(() => {
   loadDashboardData()
   wsService.onStateChange(handleWsStateChange)
-  // 每 30 秒轮询一次系统健康状态
+
   statusPollingInterval = window.setInterval(fetchSystemStatus, 30000)
 })
 
@@ -246,7 +274,7 @@ onUnmounted(() => {
 .page-title {
   font-size: 2rem;
   font-weight: bold;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin-bottom: 2rem;
 }
 
@@ -258,10 +286,10 @@ onUnmounted(() => {
 }
 
 .stat-card {
-  background: white;
+  background: var(--color-bg-primary);
   padding: 1.5rem;
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -270,23 +298,23 @@ onUnmounted(() => {
 .stat-icon {
   width: 48px;
   height: 48px;
-  background: #f3f4f6;
+  background: var(--color-bg-hover);
   border-radius: 0.5rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
 }
 
 .stat-content h3 {
   font-size: 2rem;
   font-weight: bold;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .stat-content p {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
   margin: 0;
 }
@@ -298,9 +326,9 @@ onUnmounted(() => {
 }
 
 .dashboard-section {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -309,25 +337,25 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
 .section-header h2 {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .view-all {
-  color: #3b82f6;
+  color: var(--color-primary);
   text-decoration: none;
   font-size: 0.875rem;
   transition: color 0.2s;
 }
 
 .view-all:hover {
-  color: #2563eb;
+  color: var(--color-primary-hover);
 }
 
 .messages-list {
@@ -338,9 +366,16 @@ onUnmounted(() => {
 
 .message-item {
   padding: 1rem;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--color-border-primary);
   border-radius: 0.5rem;
   margin-bottom: 0.75rem;
+  background: var(--color-bg-primary);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.message-item:hover {
+  background-color: var(--color-bg-tertiary);
 }
 
 .message-header {
@@ -353,7 +388,7 @@ onUnmounted(() => {
 .message-header h4 {
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
   max-width: 300px;
   overflow: hidden;
@@ -362,12 +397,12 @@ onUnmounted(() => {
 }
 
 .message-time {
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.75rem;
 }
 
 .message-content {
-  color: #4b5563;
+  color: var(--color-text-secondary);
   font-size: 0.875rem;
   margin-bottom: 0.5rem;
   line-height: 1.5;
@@ -384,10 +419,10 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.priority-0 { background: #dbeafe; color: #1e40af; }
-.priority-1 { background: #f3f4f6; color: #374151; }
-.priority-2 { background: #fef3c7; color: #92400e; }
-.priority-3 { background: #fecaca; color: #991b1b; }
+.priority-0 { background: var(--color-priority-low-bg); color: var(--color-priority-low-text); }
+.priority-1 { background: var(--color-priority-normal-bg); color: var(--color-priority-normal-text); }
+.priority-2 { background: var(--color-priority-high-bg); color: var(--color-priority-high-text); }
+.priority-3 { background: var(--color-priority-emergency-bg); color: var(--color-priority-emergency-text); }
 
 .system-status {
   padding: 1.5rem;
@@ -398,7 +433,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 0;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--color-bg-hover);
 }
 
 .status-item:last-child {
@@ -406,7 +441,7 @@ onUnmounted(() => {
 }
 
 .status-label {
-  color: #4b5563;
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
 
@@ -424,7 +459,7 @@ onUnmounted(() => {
 
 .loading, .empty-state {
   text-align: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   padding: 2rem;
 }
 

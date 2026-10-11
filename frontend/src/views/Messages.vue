@@ -4,9 +4,9 @@
   <div class="page-header">
     <h1 class="page-title">{{ $t('common.messages') }}</h1>
     <div class="page-actions">
-      <button 
-        v-if="canSendNotification" 
-        @click="openSendModal" 
+      <button
+        v-if="canSendNotification"
+        @click="openSendModal"
         class="send-btn"
       >
         {{ $t('messages.sendNotification') }}
@@ -14,10 +14,10 @@
       <button @click="refreshMessages" :disabled="loading" class="refresh-btn">
         {{ loading ? $t('common.loading') : $t('common.refresh') }}
       </button>
-      <button 
-        v-if="selectedMessages.length > 0" 
-        @click="deleteSelectedMessages" 
-        :disabled="deleting" 
+      <button
+        v-if="selectedMessages.length > 0"
+        @click="deleteSelectedMessages"
+        :disabled="deleting"
         class="delete-selected-btn"
       >
         <LoadingSpinner v-if="deleting" size="small" variant="dots" />
@@ -30,7 +30,7 @@
         {{ error }}
       </div>
 
-      <!-- Notification Permission Prompt -->
+
       <div v-if="shouldShowNotificationPrompt" class="notification-prompt">
         <div class="prompt-content">
           <div class="prompt-icon">
@@ -48,55 +48,56 @@
               {{ $t('messages.enableNotifications') }}
             </button>
             <button @click="dismissNotificationPrompt" class="btn btn-secondary">
-              {{ $t('common.dismiss') }}
+              {{ $t('messages.dismiss') }}
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Message Filters -->
-      <MessageFilters 
+
+      <MessageFilters
         :applications="applications"
         @change="handleFilterChange"
       />
 
       <div class="messages-container">
         <div class="messages-list">
-          <!-- Select All Checkbox -->
+
           <div class="select-all-container">
             <label class="checkbox-label">
-              <input 
-                type="checkbox" 
-                :checked="allSelected" 
+              <input
+                type="checkbox"
+                :checked="allSelected"
                 @change="toggleSelectAll"
                 class="checkbox"
               />
               {{ $t('messages.selectAll') }}
             </label>
           </div>
-          
+
           <div
             v-for="message in filteredMessages"
             :key="message.id"
             class="message-card"
             :class="{ 'message-selected': selectedMessages.includes(message.id) }"
+            @click="openMessageDetail(message)"
           >
             <div class="message-header">
-              <div class="message-checkbox">
-                <input 
-                  type="checkbox" 
-                  :checked="selectedMessages.includes(message.id)" 
+              <div class="message-checkbox" @click.stop>
+                <input
+                  type="checkbox"
+                  :checked="selectedMessages.includes(message.id)"
                   @change="toggleMessageSelection(message.id)"
                   class="checkbox"
                 />
               </div>
               <h3 class="message-title">{{ message.title }}</h3>
               <div class="message-meta">
-                <span class="message-priority priority-{{ message.priority }}">
+                <span class="message-priority" :class="`priority-${Math.min(message.priority ?? 1, 3)}`">
                   {{ getPriorityLabel(message.priority) }}
                 </span>
                 <button
-                  @click="deleteMessage(message.id)"
+                  @click.stop="deleteMessage(message.id)"
                   class="delete-btn"
                   :title="$t('messages.deleteMessage')"
                 >
@@ -106,8 +107,8 @@
             </div>
             <p class="message-content">{{ message.message }}</p>
             <div class="message-footer">
-              <span class="message-time">{{ formatTime(message.date) }}</span>
-              <span class="message-app-id">App ID: {{ message.appid }}</span>
+              <span class="message-time" :title="formatDateTime(message.date)">{{ formatRelativeTime(message.date) }}</span>
+              <span class="message-app-name">{{ getApplicationName(message.appid) }}</span>
             </div>
           </div>
 
@@ -128,11 +129,11 @@
             <LoadingSpinner :text="$t('messages.loadingMessages')" />
           </div>
 
-          <!-- Load More Button -->
+
           <div v-if="hasMore && !loading" class="load-more-container">
-            <button 
-              @click="loadMore" 
-              :disabled="loadingMore" 
+            <button
+              @click="loadMore"
+              :disabled="loadingMore"
               class="load-more-btn"
             >
               <LoadingSpinner v-if="loadingMore" size="small" variant="dots" />
@@ -140,49 +141,52 @@
             </button>
           </div>
 
-          <!-- No More Messages Indicator -->
+
           <div v-if="!hasMore && messages.length > 0" class="no-more-messages">
             {{ $t('messages.noMoreMessages') }}
           </div>
         </div>
       </div>
 
-      <ConnectionStatus 
-        :connected="wsConnected"
-        :connecting="wsConnectionState === 'connecting'"
-        :last-connected="lastConnected"
-        :reconnect="refreshMessages"
-      />
-      <SendNotificationModal 
+      <SendNotificationModal
         v-if="showSendModal"
         @close="closeSendModal"
         @submitted="handleMessageSent"
+      />
+      <MessageDetailModal
+        v-if="showDetailModal && selectedMessage"
+        :message="selectedMessage"
+        @close="closeMessageDetail"
+        @deleted="handleMessageDeleted"
       />
     </div>
   </Layout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import Layout from '@/components/Layout.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import LoadingSpinner from '@/components/LoadingSpinner.vue'
 import MessageFilters from '@/components/MessageFilters.vue'
-import ConnectionStatus from '@/components/ConnectionStatus.vue'
 import { useMessagesStore } from '@/stores/messages'
 import { useAuthStore } from '@/stores/auth'
 import SendNotificationModal from '@/components/SendNotificationModal.vue'
+import MessageDetailModal from '@/components/MessageDetailModal.vue'
 import { applicationApi } from '@/services/api'
-import { wsService } from '@/services/websocket'
 import { ApiError } from '@/types'
 import { showError, showSuccess } from '@/utils/errorHandler'
+import { formatRelativeTime, formatDateTime } from '@/utils/datetime'
 import { browserNotificationService } from '@/services/browserNotification'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import type { Application, Message } from '@/types'
 
 const { t } = useI18n()
 const { confirm: confirmDialog } = useConfirmDialog()
+const route = useRoute()
+const router = useRouter()
 
 const messagesStore = useMessagesStore()
 const authStore = useAuthStore()
@@ -192,59 +196,52 @@ const loadingMore = computed(() => messagesStore.loadingMore)
 const error = computed(() => messagesStore.error)
 const messages = computed(() => messagesStore.messages)
 const hasMore = computed(() => messagesStore.hasMore)
-const wsConnected = ref(wsService.isConnected())
-const wsConnectionState = ref(wsService.getConnectionState())
-const lastConnected = ref<string | undefined>(wsService.getLastConnected() ?? undefined)
 
-// Applications for filter
+
 const applications = ref<Application[]>([])
 
-// Selection state
+
 const selectedMessages = ref<number[]>([])
 const deleting = ref(false)
 
-// Filter state
+
 const filters = ref({
   applicationId: '',
   priority: '',
   search: ''
 })
 
-// Computed filtered messages
+
 const filteredMessages = computed(() => {
   let filtered = messages.value
-  
-  // Filter by application
+
+
   if (filters.value.applicationId) {
     filtered = filtered.filter(msg => msg.appid.toString() === filters.value.applicationId)
   }
-  
-  // Filter by priority
+
+
   if (filters.value.priority !== '') {
     filtered = filtered.filter(msg => msg.priority?.toString() === filters.value.priority)
   }
-  
-  // Filter by search term
+
+
   if (filters.value.search) {
     const searchTerm = filters.value.search.toLowerCase()
-    filtered = filtered.filter(msg => 
-      msg.title?.toLowerCase().includes(searchTerm) || 
+    filtered = filtered.filter(msg =>
+      msg.title?.toLowerCase().includes(searchTerm) ||
       msg.message.toLowerCase().includes(searchTerm)
     )
   }
-  
+
   return filtered
 })
 
-// Computed for select all checkbox
+
 const allSelected = computed(() => {
-  return filteredMessages.value.length > 0 && 
+  return filteredMessages.value.length > 0 &&
     selectedMessages.value.length === filteredMessages.value.length
 })
-
-const formatTime = (dateString: string) => {
-  return new Date(dateString).toLocaleString()
-}
 
 const getPriorityLabel = (priority?: number) => {
   if (priority === undefined || priority === null) return t('common.priorityNormal')
@@ -257,8 +254,33 @@ const getPriorityLabel = (priority?: number) => {
   return labels[Math.min(priority, 3)] || t('common.priorityNormal')
 }
 
+
+const getApplicationName = (appid: number) => {
+  const app = applications.value.find(a => a.id === appid)
+  return app?.name || t('messages.unknownApplication')
+}
+
 const refreshMessages = () => {
-  messagesStore.fetchMessages({ limit: 100 })
+  return messagesStore.fetchMessages({ limit: 100 })
+}
+
+
+
+
+
+
+const openMessageFromQuery = () => {
+  const raw = route.query.messageId
+  const messageId = Number(Array.isArray(raw) ? raw[0] : raw)
+  if (!Number.isSafeInteger(messageId) || messageId <= 0) return
+
+  const target = messages.value.find(m => m.id === messageId)
+  if (target) {
+    openMessageDetail(target)
+  }
+  const cleared = { ...route.query }
+  delete cleared.messageId
+  void router.replace({ query: cleared })
 }
 
 const deleteMessage = async (id: number) => {
@@ -269,7 +291,7 @@ const deleteMessage = async (id: number) => {
     cancelText: t('common.confirmDialog.cancelButton'),
     type: 'danger'
   })
-  
+
   if (confirmed) {
     try {
       await messagesStore.deleteMessage(id)
@@ -284,11 +306,11 @@ const loadMore = async () => {
   try {
     await messagesStore.loadMoreMessages()
   } catch (error) {
-    showError(error as ApiError, 'Failed to load more messages')
+    showError(error as ApiError, t('messages.loadMoreFailed'))
   }
 }
 
-// Selection functions
+
 const toggleMessageSelection = (messageId: number) => {
   const index = selectedMessages.value.indexOf(messageId)
   if (index === -1) {
@@ -300,10 +322,10 @@ const toggleMessageSelection = (messageId: number) => {
 
 const toggleSelectAll = () => {
   if (allSelected.value) {
-    // Deselect all
+
     selectedMessages.value = []
   } else {
-    // Select all filtered messages
+
     selectedMessages.value = filteredMessages.value.map(msg => msg.id)
   }
 }
@@ -333,12 +355,12 @@ const deleteSelectedMessages = async () => {
   }
 }
 
-// Filter functions
+
 const handleFilterChange = (newFilters: any) => {
   filters.value = { ...newFilters }
 }
 
-// Load applications for filter
+
 const loadApplications = async () => {
   try {
     const response = await applicationApi.getApplications()
@@ -348,31 +370,33 @@ const loadApplications = async () => {
   }
 }
 
-const handleNewMessage = (message: any) => {
-  console.log('New message received:', message)
-}
-
-const handleWsStateChange = (state: 'disconnected' | 'connecting' | 'connected') => {
-  wsConnected.value = state === 'connected'
-  wsConnectionState.value = state
-  // 确保在状态变为 connected 时更新最后连接时间
-  lastConnected.value = wsService.getLastConnected() ?? undefined
-}
-
 onMounted(() => {
-  refreshMessages()
+  void refreshMessages().then(openMessageFromQuery)
   loadApplications()
-  wsService.onMessage(handleNewMessage)
-  wsService.onStateChange(handleWsStateChange)
   checkNotificationPrompt()
 })
 
-onUnmounted(() => {
-  wsService.offMessage(handleNewMessage)
-  wsService.offStateChange(handleWsStateChange)
-})
-
 const showSendModal = ref(false)
+const showDetailModal = ref(false)
+const selectedMessage = ref<Message | null>(null)
+
+const openMessageDetail = (message: Message) => {
+  selectedMessage.value = message
+  showDetailModal.value = true
+}
+
+const closeMessageDetail = () => {
+  showDetailModal.value = false
+  selectedMessage.value = null
+}
+
+const handleMessageDeleted = (id: number) => {
+  const index = selectedMessages.value.indexOf(id)
+  if (index !== -1) {
+    selectedMessages.value.splice(index, 1)
+  }
+  closeMessageDetail()
+}
 const openSendModal = () => {
   showSendModal.value = true
 }
@@ -388,17 +412,17 @@ const canSendNotification = computed(() => {
   return (authStore.user?.admin === true) || applications.value.length > 0
 })
 
-// Check if browser notifications are available and not granted
+
 const shouldShowNotificationPrompt = ref(true)
 
 const checkNotificationPrompt = () => {
-  if (!browserNotificationService.isNotificationSupported() || 
+  if (!browserNotificationService.isNotificationSupported() ||
       browserNotificationService.getPermission() !== 'default') {
     shouldShowNotificationPrompt.value = false
     return
   }
-  
-  // Check if user has dismissed the prompt before
+
+
   const dismissed = localStorage.getItem('notification-prompt-dismissed')
   if (dismissed) {
     shouldShowNotificationPrompt.value = false
@@ -436,7 +460,7 @@ const dismissNotificationPrompt = () => {
 .page-title {
   font-size: 2rem;
   font-weight: bold;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
 }
 
@@ -447,8 +471,8 @@ const dismissNotificationPrompt = () => {
 
 .send-btn {
   padding: 0.5rem 1rem;
-  background-color: #10b981;
-  color: white;
+  background-color: var(--color-success);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
@@ -461,8 +485,8 @@ const dismissNotificationPrompt = () => {
 
 .refresh-btn {
   padding: 0.5rem 1rem;
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
@@ -470,27 +494,27 @@ const dismissNotificationPrompt = () => {
 }
 
 .refresh-btn:hover:not(:disabled) {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .refresh-btn:disabled {
-  background-color: #9ca3af;
+  background-color: var(--color-text-muted);
   cursor: not-allowed;
 }
 
 .error-message {
-  background-color: #fef2f2;
-  color: #dc2626;
+  background-color: var(--color-error-bg);
+  color: var(--color-error);
   padding: 1rem;
   border-radius: 0.375rem;
   margin-bottom: 1rem;
-  border: 1px solid #fecaca;
+  border: 1px solid var(--color-error);
 }
 
 .messages-container {
-  background: white;
+  background: var(--color-bg-primary);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
 
@@ -501,12 +525,13 @@ const dismissNotificationPrompt = () => {
 
 .message-card {
   padding: 1.5rem;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border-primary);
   transition: background-color 0.2s;
+  cursor: pointer;
 }
 
 .message-card:hover {
-  background-color: #f9fafb;
+  background-color: var(--color-bg-tertiary);
 }
 
 .message-card:last-child {
@@ -523,7 +548,7 @@ const dismissNotificationPrompt = () => {
 .message-title {
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0;
   flex: 1;
   margin-right: 1rem;
@@ -545,16 +570,16 @@ const dismissNotificationPrompt = () => {
   white-space: nowrap;
 }
 
-.priority-0 { background: #dbeafe; color: #1e40af; }
-.priority-1 { background: #f3f4f6; color: #374151; }
-.priority-2 { background: #fef3c7; color: #92400e; }
-.priority-3 { background: #fecaca; color: #991b1b; }
+.priority-0 { background: var(--color-priority-low-bg); color: var(--color-priority-low-text); }
+.priority-1 { background: var(--color-priority-normal-bg); color: var(--color-priority-normal-text); }
+.priority-2 { background: var(--color-priority-high-bg); color: var(--color-priority-high-text); }
+.priority-3 { background: var(--color-priority-emergency-bg); color: var(--color-priority-emergency-text); }
 
 .delete-btn {
   width: 24px;
   height: 24px;
-  background: #ef4444;
-  color: white;
+  background: var(--color-error);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.25rem;
   cursor: pointer;
@@ -570,7 +595,7 @@ const dismissNotificationPrompt = () => {
 }
 
 .message-content {
-  color: #4b5563;
+  color: var(--color-text-secondary);
   font-size: 1rem;
   line-height: 1.6;
   margin-bottom: 1rem;
@@ -580,40 +605,8 @@ const dismissNotificationPrompt = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   font-size: 0.875rem;
-}
-
-.connection-status {
-  position: fixed;
-  bottom: 2rem;
-  right: 2rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  background: white;
-  border-radius: 2rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  font-size: 0.875rem;
-  color: #6b7280;
-  transition: all 0.2s;
-}
-
-.connection-status.connected {
-  color: #059669;
-}
-
-.status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #dc2626;
-  transition: background-color 0.2s;
-}
-
-.connection-status.connected .status-indicator {
-  background: #059669;
 }
 
 .loading-container {
@@ -633,9 +626,9 @@ const dismissNotificationPrompt = () => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1.5rem;
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
   border-radius: 0.375rem;
   cursor: pointer;
   font-size: 0.875rem;
@@ -643,7 +636,7 @@ const dismissNotificationPrompt = () => {
 }
 
 .load-more-btn:hover:not(:disabled) {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 .load-more-btn:disabled {
@@ -653,17 +646,17 @@ const dismissNotificationPrompt = () => {
 
 .no-more-messages {
   text-align: center;
-  color: #9ca3af;
+  color: var(--color-text-muted);
   padding: 1rem;
   font-size: 0.875rem;
   font-style: italic;
 }
 
-/* Selection styles */
+
 .select-all-container {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid #e5e7eb;
-  background-color: #f9fafb;
+  border-bottom: 1px solid var(--color-border-primary);
+  background-color: var(--color-bg-tertiary);
 }
 
 .checkbox-label {
@@ -671,19 +664,19 @@ const dismissNotificationPrompt = () => {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: #374151;
+  color: var(--color-text-secondary);
   cursor: pointer;
 }
 
 .checkbox {
   width: 16px;
   height: 16px;
-  accent-color: #3b82f6;
+  accent-color: var(--color-primary);
 }
 
 .message-selected {
-  background-color: #eff6ff;
-  border-left: 3px solid #3b82f6;
+  background-color: var(--color-info-bg);
+  border-left: 3px solid var(--color-primary);
 }
 
 .message-checkbox {
@@ -695,8 +688,8 @@ const dismissNotificationPrompt = () => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--color-error);
+  color: var(--color-text-inverse);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
@@ -714,10 +707,10 @@ const dismissNotificationPrompt = () => {
   cursor: not-allowed;
 }
 
-/* Notification Prompt Styles */
+
 .notification-prompt {
-  background-color: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background-color: var(--color-info-bg);
+  border: 1px solid var(--color-info);
   border-radius: 0.5rem;
   margin-bottom: 1rem;
   padding: 1rem;
@@ -731,7 +724,7 @@ const dismissNotificationPrompt = () => {
 
 .prompt-icon {
   flex-shrink: 0;
-  color: #3b82f6;
+  color: var(--color-info);
 }
 
 .prompt-text {
@@ -741,13 +734,13 @@ const dismissNotificationPrompt = () => {
 .prompt-text h3 {
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--color-text-primary);
   margin: 0 0 0.25rem 0;
 }
 
 .prompt-text p {
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--color-text-tertiary);
   margin: 0;
   line-height: 1.4;
 }
@@ -769,22 +762,22 @@ const dismissNotificationPrompt = () => {
 }
 
 .btn-primary {
-  background-color: #3b82f6;
-  color: white;
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
 }
 
 .btn-primary:hover {
-  background-color: #2563eb;
+  background-color: var(--color-primary-hover);
 }
 
 .btn-secondary {
-  background-color: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background-color: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border-secondary);
 }
 
 .btn-secondary:hover {
-  background-color: #e5e7eb;
+  background-color: var(--color-bg-active);
 }
 
 @media (max-width: 768px) {
@@ -807,12 +800,6 @@ const dismissNotificationPrompt = () => {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
-  }
-
-  .connection-status {
-    bottom: 1rem;
-    right: 1rem;
-    left: 1rem;
   }
 
   .prompt-content {
