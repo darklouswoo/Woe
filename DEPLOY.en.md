@@ -79,28 +79,17 @@ npx wrangler deploy
 # Equivalent script: npm run deploy
 ```
 
-Database schema: the migration chain in `src/migrations/sql/` is **incremental** and assumes that the initial tables already exist. Therefore:
+The Worker runs migrations on the first request: it applies the checked-in `0000_initial_schema` baseline and then the remaining migrations in name order. A fresh D1 does not require `drizzle-kit generate`, `db:push`, or a hand-generated baseline file. A successful migration is reused within the Worker isolate, and concurrent first requests share one migration run.
 
-- **Fresh deployment (empty D1):** create the baseline schema before deploying:
-  ```bash
-  # 1. Generate baseline CREATE TABLE SQL into a temporary directory.
-  npx drizzle-kit generate --dialect sqlite --schema ./src/models/index.ts --out /tmp/woe-baseline
-  # 2a. Apply it to the remote D1 database. The database name comes from wrangler.toml.
-  #     Run this before wrangler deploy: the first checked-in migration is ALTER TABLE,
-  #     so deploying directly to an empty database fails because the tables are missing.
-  npx wrangler d1 execute woe-db --remote --file /tmp/woe-baseline/0000_*.sql
+If migration fails, no business route runs and the request returns HTTP 503:
 
-  # 2b. Apply it to the local D1 database for wrangler dev (separate from the remote database).
-  npx wrangler d1 execute woe-db --local --file /tmp/woe-baseline/0000_*.sql
+```json
+{"error":"Database migration failed","code":"DATABASE_MIGRATION_FAILED"}
+```
 
-  # 3. Deploy. With no migration records, incremental migrations skip already-applied changes.
-  npx wrangler deploy
-  ```
-- **Upgrade of an existing deployment:** deploy the new version directly; incremental migrations run automatically and only move forward.
+The response does not expose SQL, file paths, or stack traces. The migration name is logged server-side; a failed state is cleared so a later request can retry.
 
-`--local` and `--remote` operate on separate databases. Applying the baseline locally does not initialize the remote database. Do not apply the baseline again to a database already managed by the migration chain, and do not use `db:push` to alter a production schema.
-
-`wrangler deploy --dry-run` (also used by `npm run build`) performs an offline build check.
+`0000_initial_schema` is a fixed checked-in baseline. `drizzle-kit generate` remains a development and diagnostic tool, not a production deployment step.
 
 ## 5. Initialize the administrator
 
@@ -134,7 +123,7 @@ curl -H "X-Gotify-Key: <app token>" -H 'Content-Type: application/json' \
 
 Message smoke test: create a client (through the Web UI or `POST /client`), connect to `/stream` with its client token, send a message with the application token, and verify that the same message id is received.
 
-## 7. Upgrade an existing public deployment
+## 8. Upgrade an existing public deployment
 
 ```bash
 git pull
@@ -150,11 +139,28 @@ Upgrade notes:
 - **Existing tasks and queue entries:** the upgrade does not automatically delete existing outbox rows or queued messages. The retained core push pipeline handles them according to its retry and retention behavior. Use the D1 console or `wrangler d1 execute` for explicit cleanup.
 - **Rollback:** redeploy an older Worker version from the Workers dashboard or with `wrangler rollback`. Rollback does not revert the database schema. If a newer migration has run, older code should remain compatible because migrations only add columns or indexes; back up important tables with `wrangler d1 execute <db> --remote --command "SELECT ..."` before deployment when needed.
 
-## 8. Troubleshooting
+## 9. Database diagnosis and recovery
+
+Use read-only checks against the remote D1 database:
+
+```bash
+npx wrangler d1 execute woe-db --remote --command "SELECT type, name FROM sqlite_master WHERE type IN ('table','index') ORDER BY type, name;"
+npx wrangler d1 execute woe-db --remote --command "SELECT name, applied_at FROM _migrations ORDER BY id;"
+```
+
+- **Fresh**: no core tables exist and `_migrations` is absent or empty. The Worker applies the fixed baseline and all pending migrations.
+- **Healthy**: all core tables exist and migration records are readable. If `0000_initial_schema` is missing, the Worker records the baseline as adopted without recreating tables.
+- **Inconsistent**: only part of the core schema exists, records disagree with the schema, or a completed migration is missing a required object. The Worker stops and returns 503.
+
+For an empty deployment, create a new D1 and deploy again. For a complete existing schema, upgrade directly. For a data-bearing inconsistent database, back it up and design a manual repair migration. Deployment never drops tables, deletes `_migrations`, or automatically reapplies the baseline.
+
+## 10. Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | `/health` returns `red` | Check the D1 binding, `database_id`, and region. |
+| Requests return `503 DATABASE_MIGRATION_FAILED` | Check the migration name in Worker logs, fix D1 access or the reported schema issue, then retry. |
+| The database is reported inconsistent | Back up the database and perform the read-only schema checks below; do not drop tables, delete `_migrations`, or reapply the baseline. |
 | Initialization returns 403 or rejects the password | `DEFAULT_ADMIN_PASSWORD` is a weak value (`password`, `admin`, or `123456`); use a strong random value. |
 | Frontend returns 404 or shows an old page | Run `npm run build:frontend` before deploying; `public/` must be current. |
 | `POST /message` returns 500 | Confirm that `queues.producers` and `queues.consumers` use the same queue binding. |

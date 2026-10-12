@@ -6,7 +6,7 @@
       "idx": 0,
       "version": "6",
       "when": 1768898945253,
-      "tag": "0000_colorful_giant_girl",
+      "tag": "0000_initial_schema",
       "breakpoints": true
     },
     {
@@ -48,14 +48,14 @@
       "idx": 6,
       "version": "6",
       "when": 1772251672073,
-      "tag": "0006_yummy_kingpin",
+      "tag": "0006_lone_atom",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "6",
       "when": 1775267116325,
-      "tag": "0007_big_fabian_cortez",
+      "tag": "0007_application_sort_key",
       "breakpoints": true
     },
     {

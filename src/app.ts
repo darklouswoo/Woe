@@ -41,17 +41,47 @@ app.options("*", (c) => {
 });
 
 
-let migrationRan = false;
-app.use("*", async (c, next) => {
-  if (!migrationRan) {
-    try {
-      const migrationRunner = new MigrationRunner(c.env.DB);
-      await migrationRunner.runPendingMigrations();
-      migrationRan = true;
+let migrationPromise: Promise<void> | null = null;
+
+async function ensureMigrations(db: HonoEnv["Bindings"]["DB"]): Promise<void> {
+  if (migrationPromise) return migrationPromise;
+
+  const runner = new MigrationRunner(db);
+  migrationPromise = runner.runPendingMigrations()
+    .then(() => {
       console.log("Database migrations completed successfully");
-    } catch (e) {
-      console.error("Migration failed:", e instanceof Error ? e.message : e);
-    }
+    })
+    .catch((error) => {
+
+
+      migrationPromise = null;
+      throw error;
+    });
+
+  return migrationPromise;
+}
+
+app.use("*", async (c, next) => {
+  try {
+    await ensureMigrations(c.env.DB);
+  } catch (error) {
+    console.error(
+      "Database migration failed:",
+      error instanceof Error ? error.message : String(error)
+    );
+    return new Response(
+      JSON.stringify({
+        error: "Database migration failed",
+        code: "DATABASE_MIGRATION_FAILED",
+      }),
+      {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
   }
   await next();
 });

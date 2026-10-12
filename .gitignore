@@ -188,6 +188,9 @@ docs/ui/
 # local git worktrees
 .worktrees/
 
+# 发布管线本地镜像（GitHub 公开仓库 clone）
+.publish/
+
 pack.sh
 
 .mimosa/

@@ -73,35 +73,22 @@ DEFAULT_ADMIN_PASSWORD=your-strong-random-password
 # 构建前端（含 vue-tsc 类型检查），输出到根 public/（ASSETS 目录）
 npm run build:frontend
 
-# 部署（会先重新生成 buildInfo，再上传 Worker 与静态资产）
+# 部署（会重新生成 buildInfo，并上传 Worker 与静态资源）
 npx wrangler deploy
-# 或使用等价 script：npm run deploy
+# 或使用等价脚本：npm run deploy
 ```
 
-数据库结构：本仓库的迁移链（`src/migrations/sql/`）是**增量形态**——它假设数据库已存在初始表结构。因此：
+数据库迁移由 Worker 在首次请求时自动执行：先运行入仓的 `0000_initial_schema` 固定基线，再按名称顺序执行后续增量迁移。全新 D1 不需要运行 `drizzle-kit generate`、`db:push` 或手动灌入临时基线。迁移成功后当前 isolate 复用成功状态；同一 isolate 的并发首请求共享一轮迁移。
 
-- **全新部署（空 D1）**：先建立基线结构，再部署：
-  ```bash
-  # 1. 从当前 schema 生成基线建表 SQL（输出到临时目录，不进入仓库）
-  npx drizzle-kit generate --dialect sqlite --schema ./src/models/index.ts --out /tmp/woe-baseline
-  # 2a. 灌入云端 D1（数据库标识取 wrangler.toml 的 database_name；需 wrangler 登录）
-  #     ——必须在 wrangler deploy 之前执行：本仓库首个迁移是 ALTER TABLE，
-  #     空库直接部署会因缺表而初始化失败
-  npx wrangler d1 execute woe-db --remote --file /tmp/woe-baseline/0000_*.sql
+迁移失败时业务路由不会执行，请求直接返回 HTTP 503：
 
-  # 2b. 灌入本地 D1（仅 wrangler dev 本地开发用；与云端库相互独立）
-  npx wrangler d1 execute woe-db --local --file /tmp/woe-baseline/0000_*.sql
+```json
+{"error":"Database migration failed","code":"DATABASE_MIGRATION_FAILED"}
+```
 
-  # 3. 部署；迁移记录为空，增量迁移按幂等冲突跳过，不重复生效
-  npx wrangler deploy
-  ```
-- **升级既有部署**：直接部署新版本——增量迁移自动执行（只前进，不自动回退）。
+响应不包含 SQL、文件路径或堆栈，具体迁移名称只记录在 Worker 日志；失败状态会清除，后续请求可重试。
 
-`--local` 与 `--remote` 操作的是两个独立的数据库：只灌本地基线不会初始化云端库；
-云端全新部署必须在 deploy 前完成 `--remote` 基线。不要在已由迁移管理的库上
-重复灌入基线或用 `db:push` 改结构。
-
-`wrangler deploy --dry-run`（`npm run build`）可做不出网的构建校验。
+`0000_initial_schema` 是固定入仓基线，`drizzle-kit generate` 仅用于开发和诊断，不是生产部署步骤。
 
 ## 5. 初始化管理员
 
@@ -145,11 +132,28 @@ npx wrangler deploy
 - **旧任务与队列**：已存在的 outbox 行、队列中的消息不会被升级流程自动删除，由保留的核心推送管线按既有重试/保留策略处理；如需清理，请用 D1 控制台或 `wrangler d1 execute` 显式操作，部署流程不会自动删数据。
 - 回滚：重新部署旧版本 Worker 代码即可（Workers 控制台或 `wrangler rollback`）；回滚不回退数据库 schema——若新版本迁移已执行，旧代码遇到新 schema 应保持兼容（迁移均为加列/加索引形态），部署前建议用 `wrangler d1 execute <db> --remote --command "SELECT ..."` 备份关键表。
 
-## 8. 故障排查
+## 8. 数据库状态诊断与故障处理
+
+使用只读命令检查远程 D1：
+
+```bash
+npx wrangler d1 execute woe-db --remote --command "SELECT type, name FROM sqlite_master WHERE type IN ('table','index') ORDER BY type, name;"
+npx wrangler d1 execute woe-db --remote --command "SELECT name, applied_at FROM _migrations ORDER BY id;"
+```
+
+- **Fresh**：核心基础表都不存在，且 `_migrations` 不存在或为空；Worker 会自动运行固定基线和增量迁移。
+- **Healthy**：核心基础表完整且迁移记录可读；没有 `0000_initial_schema` 记录时只登记基线采用，不重复建表。
+- **Inconsistent**：只有部分基础表、迁移记录与结构不符，或已完成迁移的关键对象缺失；Worker 停止迁移并返回 503。
+
+无数据时新建 D1 并重新部署；有数据且结构完整时直接升级；有数据但不一致时先备份，再制定人工修复迁移。部署不会 DROP 表、删除 `_migrations` 或自动重灌基线。
+
+## 9. 故障排查
 
 | 现象 | 排查 |
 |---|---|
 | `/health` 返回 `red` | D1 绑定不可达：检查 `database_id` 与区域 |
+| 请求返回 `503 DATABASE_MIGRATION_FAILED` | 查看 Worker 日志中的迁移名称；确认 D1 权限和资源可达性，修复后重试 |
+| 数据库被判定为不一致 | 先备份并执行只读结构检查；不要 DROP 表、删除 `_migrations` 或重复灌入基线 |
 | 初始化返回 403/弱口令拒绝 | `DEFAULT_ADMIN_PASSWORD` 是弱值（password/admin/123456）；换强随机值 |
 | 前端 404 或旧页面 | 忘记先 `npm run build:frontend`——public/ 未更新 |
 | 部署后 `POST /message` 500 | 队列绑定缺失：确认 `queues.producers`/`queues.consumers` 与队列名一致 |
