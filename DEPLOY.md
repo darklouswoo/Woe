@@ -48,13 +48,15 @@ cp example.wrangler.toml wrangler.toml
 
 ## 3. 设置 Secrets
 
-管理员初始化凭据通过 Secret 注入（**不要**写进 `[vars]`——明文密码会随配置泄露）：
+`DEFAULT_ADMIN_USER`（在 `[vars]` 中配置，默认 `admin`）是引导用户名；`DEFAULT_ADMIN_PASSWORD` 是通过 Secret 设置的引导密码。**这组凭据仅用于授权首次初始化，不会自动创建管理员账号，也不能用于日常登录。**
+
+引导密码通过以下命令注入（**不要**写进 `[vars]`——明文密码会随配置泄露）：
 
 ```bash
 # 云端：强随机值；服务端拒绝已知弱值（password / admin / 123456），弱口令无法触发初始化
 npx wrangler secret put DEFAULT_ADMIN_PASSWORD
 
-# 用户名在 [vars] 的 DEFAULT_ADMIN_USER 中配置（默认 admin），它不是 Secret
+# 引导用户名在 [vars] 的 DEFAULT_ADMIN_USER 中配置（默认 admin），它不是 Secret
 ```
 
 本地开发使用 `frontend/` 之外的仓库根 `.dev.vars` 文件（已被 .gitignore 忽略，勿提交）：
@@ -92,12 +94,27 @@ npx wrangler deploy
 
 ## 5. 初始化管理员
 
-部署完成后（首次、数据库为空时）：
+部署不会自动创建默认管理员账号。首次部署完成后，通过 `/setup` 创建首个实际管理员：
 
-- 浏览器：打开 Worker 域名，按 Setup 引导输入用户名/密码；
-- API：`curl -u "<DEFAULT_ADMIN_USER>:<DEFAULT_ADMIN_PASSWORD>" -X POST https://<your-domain>/api/v1/init/admin -H 'Content-Type: application/json' -d '{"name":"admin","pass":"<管理员密码>"}'`（请求字段是 `name` / `pass`）
+1. 打开 Worker 域名，进入 `/setup` 页面。
+2. 在“初始化令牌”的用户名字段填写 `DEFAULT_ADMIN_USER` 的配置值（默认 `admin`），密码字段填写第 3 节设置的 `DEFAULT_ADMIN_PASSWORD` Secret。这组凭据只授权初始化。
+3. 在管理员用户名、密码和确认密码字段中填写要创建的实际管理员账号，例如 `woe-owner`，并使用独立的强密码。Web UI 要求管理员密码至少 8 个字符。
+4. 提交成功后，使用第 3 步创建的管理员账号登录 Web UI。
 
-初始化是**一次性**的：成功后再次调用会被拒绝（`is_initialized` 状态守卫）。`DEFAULT_ADMIN_*` 凭据仅用于触发初始化，不能用于日常登录——初始化成功后即可在 Web UI 登录刚创建的管理员账号。
+建议使用不同的用户名和独立的强密码。**不要让实际管理员的用户名和密码同时与引导凭据完全相同**，否则该组合会被登录认证拒绝；使用相同用户名但不同密码是允许的。
+
+也可通过 API 完成同一流程：
+
+```bash
+curl -u "<DEFAULT_ADMIN_USER>:<DEFAULT_ADMIN_PASSWORD>" \
+  -X POST https://<your-domain>/api/v1/init/admin \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"woe-owner","pass":"<独立的管理员强密码>"}'
+```
+
+`-u` 中是引导凭据，请求体的 `name` / `pass` 是要创建的实际管理员凭据；请替换示例占位符。API 只校验 `name` / `pass` 非空，请自行选择强密码。
+
+初始化是**一次性**的：成功后再次调用会被拒绝。修改 `DEFAULT_ADMIN_USER` 或 `DEFAULT_ADMIN_PASSWORD` 不会更改已创建的管理员用户名或密码；后续账号管理应使用用户管理功能。
 
 ## 6. 验证部署
 

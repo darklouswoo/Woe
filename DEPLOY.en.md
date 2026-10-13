@@ -48,14 +48,16 @@ The public build contains no vendor-specific mobile-push configuration. To add a
 
 ## 3. Set secrets
 
-Inject the administrator initialization credential as a Secret (**do not** put it in `[vars]`, because a plaintext password would be exposed with the configuration):
+`DEFAULT_ADMIN_USER` (configured in `[vars]`, default: `admin`) is the bootstrap username; `DEFAULT_ADMIN_PASSWORD` is the bootstrap password set through a Secret. **These credentials only authorize first-time initialization. They do not automatically create an administrator account and cannot be used for everyday sign-in.**
+
+Inject the bootstrap password with the following command (**do not** put it in `[vars]`, because a plaintext password would be exposed with the configuration):
 
 ```bash
 # Use a strong random value. The server rejects known weak values
 # (password / admin / 123456), which cannot trigger initialization.
 npx wrangler secret put DEFAULT_ADMIN_PASSWORD
 
-# DEFAULT_ADMIN_USER is configured in [vars] (default: admin); it is not a Secret.
+# The bootstrap username DEFAULT_ADMIN_USER is configured in [vars] (default: admin); it is not a Secret.
 ```
 
 For local development, use a `.dev.vars` file at the repository root, outside `frontend/` (it is ignored by `.gitignore` and must not be committed):
@@ -93,18 +95,27 @@ The response does not expose SQL, file paths, or stack traces. The migration nam
 
 ## 5. Initialize the administrator
 
-After deployment, when the database is empty for the first time:
+Deployment does not automatically create a default administrator account. After the first deployment, create the first actual administrator through `/setup`:
 
-- **Browser:** open the Worker hostname and follow the Setup flow.
-- **API:**
-  ```bash
-  curl -u "<DEFAULT_ADMIN_USER>:<DEFAULT_ADMIN_PASSWORD>" \
-    -X POST https://<your-domain>/api/v1/init/admin \
-    -H 'Content-Type: application/json' \
-    -d '{"name":"admin","pass":"<administrator-password>"}'
-  ```
+1. Open the Worker hostname to reach the `/setup` page.
+2. In the “Initialization Token” username field, enter the configured `DEFAULT_ADMIN_USER` (default: `admin`). In its password field, enter the `DEFAULT_ADMIN_PASSWORD` Secret set in section 3. These credentials only authorize initialization.
+3. In the administrator username, password, and confirmation fields, choose the actual administrator's credentials, such as username `woe-owner` and an independent strong password. The Web UI requires at least 8 characters for the administrator password.
+4. After submission succeeds, sign in to the Web UI with the administrator account created in step 3.
 
-The request body fields are `name` and `pass`. Initialization is one-time: a second request is rejected by the `is_initialized` guard. `DEFAULT_ADMIN_*` credentials only trigger initialization; after it succeeds, sign in to the Web UI with the administrator account you created.
+Use a different username and an independent strong password. **Do not reuse both the bootstrap username and password as the administrator's credentials**, because sign-in rejects that exact combination. Using the same username with a different password is allowed.
+
+Alternatively, complete the same flow through the API:
+
+```bash
+curl -u "<DEFAULT_ADMIN_USER>:<DEFAULT_ADMIN_PASSWORD>" \
+  -X POST https://<your-domain>/api/v1/init/admin \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"woe-owner","pass":"<independent-strong-administrator-password>"}'
+```
+
+The `-u` option contains the bootstrap credentials; the request body fields `name` and `pass` contain the actual administrator's credentials to create. Replace the example placeholders. The API only checks that `name` and `pass` are nonempty, so choose a strong password yourself.
+
+Initialization is one-time: a second request is rejected after success. Changing `DEFAULT_ADMIN_USER` or `DEFAULT_ADMIN_PASSWORD` does not change an existing administrator's username or password; use user management for later account changes.
 
 ## 6. Verify the deployment
 

@@ -16,6 +16,16 @@ Woe is a self-hosted, Gotify-compatible notification service running on Cloudfla
 - Newly issued app/client tokens use the `gtfy…` EdDSA format. Legacy `A…`/`C…` tokens remain valid, and full tokens are returned only by create or rotate responses.
 - `priority` accepts integers from **0..3**. Explicit values outside that range return 400.
 
+## First-time setup and sign-in
+
+**Deployment does not automatically create a default administrator account.** `DEFAULT_ADMIN_USER` (default: `admin`) and `DEFAULT_ADMIN_PASSWORD` (set through a Wrangler Secret) only authorize first-time initialization; they are not credentials for everyday sign-in.
+
+After deployment, open `/setup`. Enter the bootstrap credentials in the “Initialization Token” username/password fields, then choose the first actual administrator's username, password, and password confirmation. Once initialization succeeds, sign in with the administrator account you created.
+
+Use a different username and an independent strong password for the administrator account. **Do not reuse both the bootstrap username and password as the administrator's credentials**, because sign-in rejects that exact combination. Initialization can succeed only once; changing `DEFAULT_ADMIN_*` does not change an existing administrator account.
+
+See [Initialize the administrator](DEPLOY.en.md#5-initialize-the-administrator) for the full steps.
+
 ## Public plugin boundary
 
 The public build contains only **displayer**, a display-plugin example that renders messages on a standalone page (`GET /display/{id}`). It does not execute webhook or mobile-push actions.
