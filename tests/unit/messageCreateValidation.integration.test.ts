@@ -143,7 +143,7 @@ async function readJson(response: Response): Promise<Record<string, any>> {
 
 describe('POST /message 统一字段校验（真库）', () => {
   describe('priority', () => {
-    test.each([0, 1, 2, 3])('JSON 显式 priority %p 合法并按原值入库', async (priority) => {
+    test.each([-1, 0, 1, 2, 3, 4, 5, 9, 10, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])('JSON 显式 priority %p 合法并按原值入库', async (priority) => {
       const fx = makeFixture();
 
       const response = await fx.postJson({ message: 'hi', priority });
@@ -165,6 +165,15 @@ describe('POST /message 统一字段校验（真库）', () => {
       expect(nullResponse.status).toBe(200);
       expect((await readJson(nullResponse)).priority).toBe(5);
       expect(nullPriority.firstMessageRow().priority).toBe(5);
+    });
+
+    test.each([{}, { priority: null }])('inherits existing fractional default without explicit-field revalidation: %p', async (fields) => {
+      const fx = makeFixture();
+      fx.testDb.sqlite.prepare('UPDATE applications SET default_priority = ? WHERE id = 1').run(2.5);
+      const response = await fx.postJson({ message: 'inherited default', ...fields });
+      expect(response.status).toBe(200);
+      expect((await readJson(response)).priority).toBe(2.5);
+      expect(fx.firstMessageRow().priority).toBe(2.5);
     });
 
     test('form priority 省略 => 应用 defaultPriority=5', async () => {
@@ -209,8 +218,8 @@ describe('POST /message 统一字段校验（真库）', () => {
       ['false', false],
       ['数组', []],
       ['对象', {}],
-      ['越界 -1', -1],
-      ['越界 4', 4],
+      ['低于安全范围', Number.MIN_SAFE_INTEGER - 1],
+      ['高于安全范围', Number.MAX_SAFE_INTEGER + 1],
     ])('JSON priority %s => 400 且不入库', async (_label, priority) => {
       const fx = makeFixture();
 
@@ -508,5 +517,42 @@ describe('POST /message 统一字段校验（真库）', () => {
       expect(response.status).toBe(400);
       expect(fx.messageCount()).toBe(0);
     });
+  });
+});
+
+
+describe('parsed JSON precision contract', () => {
+  test.each([
+    ['9007199254740991.1', 9007199254740991],
+    ['1.00000000000000001', 1],
+  ])('accepts the parsed integer from %s', async (literal, expected) => {
+    const fx = makeFixture();
+    const response = await fx.postRawJson(`{"message":"precision","priority":${literal}}`);
+    expect(response.status).toBe(200);
+    expect((await response.json() as any).priority).toBe(expected);
+    expect(fx.firstMessageRow().priority).toBe(expected);
+  });
+  test.each(['9007199254740992', '-9007199254740992', '1e309'])('rejects parsed unsafe value %s without side effects', async (literal) => {
+    const fx = makeFixture();
+    const response = await fx.postRawJson(`{"message":"precision","priority":${literal}}`);
+    expect(response.status).toBe(400);
+    expect(fx.messageCount()).toBe(0);
+    expect(fx.broadcastFetch).not.toHaveBeenCalled();
+    expect(fx.outboxCount()).toBe(0);
+    expect(fx.sendBatch).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('Pulse issue 2 notification', () => {
+  test('preserves markdown, extras and priority 5 in the database and response', async () => {
+    const payload = require('../fixtures/pulse-issue-2.json');
+    const fx = makeFixture();
+    const response = await fx.postJson(payload);
+    expect(response.status).toBe(200);
+    const body = await readJson(response);
+    expect(body).toMatchObject(payload);
+    expect(fx.firstMessageRow()).toMatchObject({priority:5,message:payload.message,title:payload.title});
+    expect(JSON.parse(fx.firstMessageRow().extras)).toEqual(payload.extras);
   });
 });

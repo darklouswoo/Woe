@@ -14,7 +14,7 @@ Gotify 兼容的自托管通知服务，运行在 Cloudflare Workers 上。Woe �
 - Basic Authentication 用于用户操作、管理员提权和初始化。
 - Application Token（`X-Gotify-Key`）用于 `POST /message`；Client Token 用于 Web/客户端会话和 `/stream`；Bearer 与 `X-Gotify-Key` 等价。
 - 新签发的 app/client token 使用 `gtfy…` EdDSA 格式，历史 `A…`/`C…` 格式仍有效；完整 token 只在创建或轮换响应中返回。
-- `priority` 接受 **0..3** 的整数，超出范围的显式值返回 400。
+- 消息 `priority` 接受**整数**并保留原值。前端按低（≤0）／普通（1）／高（2）／紧急（≥3）四档展示与筛选；手动发送和应用创建的优先级控件提供 **0–3 四档**。缺省或 JSON null 时使用应用默认值。
 
 ## 首次初始化与登录
 

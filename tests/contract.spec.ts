@@ -103,12 +103,15 @@ describe('API contract', () => {
     )
   })
 
-  test('api-contract fixture documents Woe priority range 0..3 for POST /message', () => {
-    const schema = readOperation('/message', 'post').requestBody.content['application/json'].schema
-
-    expect(schema.properties.priority.minimum).toBe(0)
-    expect(schema.properties.priority.maximum).toBe(3)
-    expect(schema.properties.priority.description).toContain('0-3')
+  test('api-contract fixture documents parsed safe integer priorities for all message encodings', () => {
+    const content = readOperation('/message', 'post').requestBody.content
+    for (const media of ['application/json', 'application/x-www-form-urlencoded', 'multipart/form-data']) {
+      const priority = content[media].schema.properties.priority
+      expect(priority.minimum).toBe(-9007199254740991)
+      expect(priority.maximum).toBe(9007199254740991)
+      expect(priority.description).toContain('safe integer')
+    }
+    expect(content['application/json'].schema.properties.priority.nullable).toBe(true)
   })
 
   test('api-contract fixture requires client token or basic auth for GET /current/user', () => {

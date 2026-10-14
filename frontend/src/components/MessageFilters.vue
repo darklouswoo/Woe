@@ -63,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import { normalizePriorityFilter } from '@/utils/priority'
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { Application } from '@/types'
 
@@ -127,7 +128,7 @@ onMounted(() => {
   }
 
   if (urlParams.has('priority')) {
-    filters.value.priority = urlParams.get('priority') || ''
+    filters.value.priority = normalizePriorityFilter(urlParams.get('priority'))
   }
 
   if (urlParams.has('search')) {

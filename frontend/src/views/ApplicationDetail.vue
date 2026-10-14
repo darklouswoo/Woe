@@ -39,8 +39,8 @@
 
               <div class="meta-item">
                 <span class="meta-label">{{ t('applicationDetail.defaultPriority') }}</span>
-                <span class="meta-value priority-badge" :class="`priority-${Math.min(application.defaultPriority ?? 0, 3)}`">
-                  {{ getPriorityLabel(application.defaultPriority) }}
+                <span class="meta-value priority-badge" :class="`priority-${getPriorityLevel(application.defaultPriority ?? 0)}`">
+                  {{ getPriorityLabel(application.defaultPriority ?? 0) }}
                 </span>
               </div>
 
@@ -130,7 +130,7 @@
                   <span class="message-time" :title="formatDateTime(message.date)">{{ formatRelativeTime(message.date) }}</span>
                 </div>
                 <p class="message-content">{{ message.message }}</p>
-                <div class="message-priority" :class="`priority-${Math.min(message.priority ?? 1, 3)}`">
+                <div class="message-priority" :class="`priority-${getPriorityLevel(message.priority ?? 1)}`">
                   {{ getPriorityLabel(message.priority) }}
                 </div>
               </div>
@@ -162,6 +162,7 @@
 </template>
 
 <script setup lang="ts">
+import { getPriorityLevel } from '@/utils/priority'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -217,7 +218,7 @@ const appId = computed(() => {
 const getPriorityLabel = (priority?: number) => {
   if (priority === undefined || priority === null) return t('common.priorityNormal')
   const labels = [t('common.priorityLow'), t('common.priorityNormal'), t('common.priorityHigh'), t('common.priorityEmergency')]
-  return labels[Math.min(priority, 3)] || t('common.priorityNormal')
+  return labels[getPriorityLevel(priority ?? 1)] || t('common.priorityNormal')
 }
 
 

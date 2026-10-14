@@ -9,7 +9,7 @@ jest.mock('../../src/plugins/manager.ts', () => ({
 import { MessageHandlers } from '../../src/handlers/messageHandlers'
 
 describe('MessageHandlers WebSocket broadcast', () => {
-  test('createMessage should broadcast through injected stream hub', async () => {
+  test.each([-1, 2, 5, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])('createMessage preserves priority %p through broadcast and plugins', async (priority) => {
     const appGet = jest.fn().mockResolvedValue({ userId: 7 })
     const insertReturning = jest.fn().mockResolvedValue([
       {
@@ -17,7 +17,7 @@ describe('MessageHandlers WebSocket broadcast', () => {
         appId: 42,
         message: 'hello from test',
         title: 'test',
-        priority: 2,
+        priority,
         date: '2026-02-27T10:00:00.000Z',
         extras: '{"scope":"test"}'
       }
@@ -49,7 +49,7 @@ describe('MessageHandlers WebSocket broadcast', () => {
 
     const handlers = new MessageHandlers(drizzleMock as any, hub as any)
 
-    const response = await handlers.createMessage(42, 'hello from test', 'test', 2, { scope: 'test' })
+    const response = await handlers.createMessage(42, 'hello from test', 'test', priority, { scope: 'test' })
 
     expect(response.status).toBe(200)
     expect(hub.broadcast).toHaveBeenCalledTimes(1)
@@ -60,7 +60,7 @@ describe('MessageHandlers WebSocket broadcast', () => {
         appid: 42,
         message: 'hello from test',
         title: 'test',
-        priority: 2
+        priority
       })
     )
     expect(emitMock).toHaveBeenCalledWith(
@@ -70,6 +70,7 @@ describe('MessageHandlers WebSocket broadcast', () => {
         message: expect.objectContaining({
           id: 101,
           appId: 42,
+          priority,
           date: '2026-02-27T10:00:00.000Z'
         })
       })

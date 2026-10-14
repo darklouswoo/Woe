@@ -14,7 +14,7 @@ Woe is a self-hosted, Gotify-compatible notification service running on Cloudfla
 - Basic Authentication is used for user operations, administrator elevation, and initialization.
 - Application Tokens (`X-Gotify-Key`) send messages to `POST /message`; Client Tokens serve Web/client sessions and `/stream`; Bearer is equivalent to `X-Gotify-Key`.
 - Newly issued app/client tokens use the `gtfy…` EdDSA format. Legacy `A…`/`C…` tokens remain valid, and full tokens are returned only by create or rotate responses.
-- `priority` accepts integers from **0..3**. Explicit values outside that range return 400.
+- Message `priority` accepts **integers** and preserves their values. The frontend displays and filters four levels: low (≤0), normal (1), high (2), and emergency (≥3). Manual sending and application creation controls offer **four levels (0–3)**. Omitted or JSON null priority inherits the application default.
 
 ## First-time setup and sign-in
 

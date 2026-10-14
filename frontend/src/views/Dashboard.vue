@@ -71,7 +71,7 @@
                 <span class="message-time" :title="formatDateTime(message.date)">{{ formatRelativeTime(message.date) }}</span>
               </div>
               <p class="message-content">{{ message.message }}</p>
-              <div class="message-priority" :class="`priority-${Math.min(message.priority ?? 1, 3)}`">
+              <div class="message-priority" :class="`priority-${getPriorityLevel(message.priority ?? 1)}`">
                 {{ getPriorityLabel(message.priority) }}
               </div>
             </div>
@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { getPriorityLevel } from '@/utils/priority'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Layout from '@/components/Layout.vue'
@@ -180,7 +181,7 @@ const getPriorityLabel = (priority?: number) => {
     t('common.priorityHigh'),
     t('common.priorityEmergency')
   ]
-  return labels[Math.min(priority, 3)] || t('common.priorityNormal')
+  return labels[getPriorityLevel(priority ?? 1)] || t('common.priorityNormal')
 }
 
 const loadDashboardData = async () => {

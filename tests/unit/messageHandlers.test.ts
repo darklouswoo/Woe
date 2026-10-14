@@ -185,16 +185,16 @@ describe('MessageHandlers', () => {
     expect(body.priority).toBe(2)
   })
 
-  test('createMessage rejects priorities outside the Woe 0..3 range', async () => {
+  test('createMessage rejects priorities outside the safe integer range', async () => {
     const { drizzle } = createCreateMessageDrizzleMock(1)
     const handlers = new MessageHandlers(drizzle as any)
 
-    const response = await handlers.createMessage(42, 'hello invalid priority', 'notice', 4)
+    const response = await handlers.createMessage(42, 'hello invalid priority', 'notice', Number.MAX_SAFE_INTEGER + 1)
     const body = await response.json() as { errorCode: number; errorDescription: string }
 
     expect(response.status).toBe(400)
     expect(body.errorCode).toBe(400)
-    expect(body.errorDescription).toContain('0 and 3')
+    expect(body.errorDescription).toContain('safe integer')
   })
 
   test('getAllMessages omits paging.next when result count is below limit', async () => {

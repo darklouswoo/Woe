@@ -18,7 +18,6 @@
 
 
 
-
 import { ApiResponse } from "./response.ts";
 
 
@@ -32,10 +31,6 @@ export interface ValidatedMessageFields {
 export type MessageCreateFieldValidation =
   | { ok: true; value: ValidatedMessageFields }
   | { ok: false; response: Response };
-
-
-export const MESSAGE_PRIORITY_MIN = 0;
-export const MESSAGE_PRIORITY_MAX = 3;
 
 
 
@@ -87,13 +82,11 @@ export function validateMessageCreateFields(input: unknown): MessageCreateFieldV
   if (rawPriority !== undefined && rawPriority !== null) {
     if (
       typeof rawPriority !== "number" ||
-      !Number.isSafeInteger(rawPriority) ||
-      rawPriority < MESSAGE_PRIORITY_MIN ||
-      rawPriority > MESSAGE_PRIORITY_MAX
+      !Number.isSafeInteger(rawPriority)
     ) {
       return {
         ok: false,
-        response: ApiResponse.error("Bad Request", 400, "Priority must be between 0 and 3"),
+        response: ApiResponse.error("Bad Request", 400, "Priority must be a safe integer"),
       };
     }
     priority = rawPriority;

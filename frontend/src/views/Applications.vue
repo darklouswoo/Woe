@@ -28,7 +28,7 @@
               </div>
               <div class="app-title-container">
                 <h3>{{ app.name }}</h3>
-                <span class="app-priority" :class="`priority-${Math.min(app.defaultPriority ?? 0, 3)}`">
+                <span class="app-priority" :class="`priority-${getPriorityLevel(app.defaultPriority ?? 0)}`">
                   {{ $t('common.priority') }} {{ app.defaultPriority }}
                 </span>
               </div>
@@ -73,6 +73,7 @@
 </template>
 
 <script setup lang="ts">
+import { getPriorityLevel } from '@/utils/priority'
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'

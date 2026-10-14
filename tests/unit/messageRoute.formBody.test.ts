@@ -221,14 +221,14 @@ describe("POST /message form body (Woe 扩展)", () => {
     expect(mockDrizzle.insert).not.toHaveBeenCalled();
   });
 
-  test("priority=5 → 400（沿用 0..3 保留偏差），不入库", async () => {
+  test("不安全 priority → 400，不入库", async () => {
     mockRequireClient.mockResolvedValue({ userId: 7, tokenType: "client", isAdmin: false });
     mockAppOwnershipRow = { id: 9, userId: 7 };
     mockAppCreateRow = { userId: 7, defaultPriority: 0 };
 
     const response = await message.fetch(
       makeFormRequest(
-        { message: "hi", priority: "5", appid: "9" },
+        { message: "hi", priority: "9007199254740992", appid: "9" },
         { "x-gotify-key": "Cclient-token" }
       ),
       mockEnv,
@@ -239,7 +239,7 @@ describe("POST /message form body (Woe 扩展)", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Bad Request",
       errorCode: 400,
-      errorDescription: "Priority must be between 0 and 3",
+      errorDescription: "Priority must be a safe integer",
     });
     expect(mockDrizzle.insert).not.toHaveBeenCalled();
   });

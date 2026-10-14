@@ -1,0 +1,21 @@
+{
+  "message": "**WARNING**: **Test Resource** on **pve-node-01**\n\nThis is a test alert from Pulse Monitoring\n\n[View in Pulse](https://monitor.example.com)",
+  "title": "Test Resource - Cpu WARNING Alert",
+  "priority": 5,
+  "extras": {
+    "client::display": {
+      "contentType": "text/markdown"
+    },
+    "pulse::alert": {
+      "id": "issue-2-regression",
+      "level": "warning",
+      "type": "cpu",
+      "resource_name": "Test Resource",
+      "node": "pve-node-01",
+      "value": 95.5,
+      "threshold": 90,
+      "duration": "5m",
+      "instance": "https://monitor.example.com"
+    }
+  }
+}

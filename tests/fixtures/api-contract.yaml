@@ -52,11 +52,11 @@ info:
     entries); stored legacy values and R2 keys are unchanged and external
     full URLs / data URLs pass through verbatim. `POST /auth/logout` is the
     token-path subset of the upstream endpoint (token revocation only, no
-    cookie session; see the operation description for boundaries). Woe extensions and retained deviations (including the retained 0..3
-    message-priority restriction) are documented in this description;
+    cookie session; see the operation description for boundaries). Woe extensions and retained deviations (including parsed safe integer
+    priority precision and strict text binding) are documented in this description;
     implemented routes are not a claim of full behavioral compatibility.
 
-  version: 1.3.3
+  version: 1.3.5
   contact:
     name: Woe API Support
   license:
@@ -1372,8 +1372,9 @@ paths:
         authenticates but is not a message field). Woe extension: in
         urlencoded/multipart/query encodings, `extras` is bound from a
         JSON-encoded string (upstream Gotify marks extras `form:"-"` and does
-        not bind it); invalid JSON → 400. The retained 0..3 priority
-        restriction applies to every encoding. Woe extension: while
+        not bind it); invalid JSON → 400. Explicit priority is checked as a safe integer after parsing
+        in every encoding. JSON numeric literals may round before this check;
+        inherited application defaults are not revalidated. Woe extension: while
         the deployment maintenance gate (system_state enqueue_write_gate) is paused,
         this endpoint returns 503 and no outbox row is enqueued.
       operationId: createMessage
@@ -1403,10 +1404,13 @@ paths:
                 priority:
                   type: integer
                   description: >-
-                    Message priority (0-3, retained restriction). When omitted,
-                    Woe inherits the application's defaultPriority.
-                  minimum: 0
-                  maximum: 3
+                    Explicit priority must be a safe integer after JSON parsing.
+                    JSON numeric literals may round before validation. Omitted or
+                    null priority inherits the application's defaultPriority;
+                    that inherited value is not revalidated by this check.
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
+                  nullable: true
                 extras:
                   type: object
                   description: Additional data
@@ -1431,10 +1435,13 @@ paths:
                 priority:
                   type: integer
                   description: >-
-                    Message priority (0-3) as a decimal integer string; invalid
+                    Explicit priority as a decimal integer string; the converted
+                    number must be a safe integer. Invalid
                     integers are rejected with 400. An empty string
                     (`priority=`) is an explicit 0; omitting the field falls
                     back to the application's defaultPriority.
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
                 appid:
                   type: integer
                   description: >-
@@ -1469,9 +1476,12 @@ paths:
                 priority:
                   type: integer
                   description: >-
-                    Message priority (0-3) as a decimal integer text field;
+                    Explicit priority as a decimal integer text field; the converted
+                    number must be a safe integer;
                     same strict-integer rules as urlencoded (`priority=` empty
                     text is an explicit 0).
+                  minimum: -9007199254740991
+                  maximum: 9007199254740991
                 appid:
                   type: integer
                   description: >-

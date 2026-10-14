@@ -414,3 +414,41 @@ describe('POST /message 认证与写闸门', () => {
     expectZeroWrites(fx);
   });
 });
+
+
+describe('signed safe priority through every request binding', () => {
+  const values = [-1, 5, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER];
+  test.each(['json', 'form', 'multipart', 'query'])('%s preserves priorities through storage and authenticated read', async (encoding) => {
+    for (const priority of values) {
+      const fx = makeFixture();
+      let response: Response;
+      const target = '/?token=Aapp-token-1';
+      if (encoding === 'json') response = await fx.post(target, { headers: {'content-type':'application/json'}, body: JSON.stringify({message:'priority regression',priority}) });
+      else if (encoding === 'form') response = await fx.post(target, { headers: {'content-type':'application/x-www-form-urlencoded'}, body: new URLSearchParams({message:'priority regression',priority:String(priority)}).toString() });
+      else if (encoding === 'multipart') {
+        const body = new FormData(); body.set('message','priority regression'); body.set('priority',String(priority));
+        response = await fx.post(target, {body});
+      } else response = await fx.post(`${target}&message=priority&priority=${priority}`);
+      expect(response.status).toBe(200);
+      const created = await readJson(response);
+      expect(created.priority).toBe(priority);
+      expect(fx.firstMessageRow().priority).toBe(priority);
+      const fetched = await message.fetch(new Request(`http://localhost/${created.id}?token=Cclient-token-1`), fx.env as any, fx.executionCtx);
+      expect(fetched.status).toBe(200);
+      expect((await readJson(fetched)).priority).toBe(priority);
+    }
+  });
+  test.each(['json', 'form', 'multipart', 'query'])('%s rejects unsafe priorities without writes', async (encoding) => {
+    for (const priority of [Number.MIN_SAFE_INTEGER-1, Number.MAX_SAFE_INTEGER+1]) {
+      const fx = makeFixture();
+      const target = '/?token=Aapp-token-1';
+      let response: Response;
+      if (encoding === 'json') response = await fx.post(target, {headers:{'content-type':'application/json'},body:JSON.stringify({message:'unsafe',priority})});
+      else if (encoding === 'form') response = await fx.post(target,{headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({message:'unsafe',priority:String(priority)}).toString()});
+      else if (encoding === 'multipart') { const body=new FormData();body.set('message','unsafe');body.set('priority',String(priority));response=await fx.post(target,{body}); }
+      else response=await fx.post(`${target}&message=unsafe&priority=${priority}`);
+      expect(response.status).toBe(400);
+      expectZeroWrites(fx);
+    }
+  });
+});

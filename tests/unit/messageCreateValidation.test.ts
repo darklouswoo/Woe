@@ -75,7 +75,7 @@ describe("validateMessageCreateFields: message", () => {
 });
 
 describe("validateMessageCreateFields: priority", () => {
-  test.each([0, 1, 2, 3])("显式整数 %p 合法并原样保留", (priority) => {
+  test.each([-1, 0, 1, 2, 3, 4, 5, 9, 10, Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER])("显式整数 %p 合法并原样保留", (priority) => {
     expect(expectValue({ message: "hi", priority })).toEqual({ message: "hi", priority });
   });
 
@@ -97,8 +97,8 @@ describe("validateMessageCreateFields: priority", () => {
     ["false", false],
     ["数组", []],
     ["对象", {}],
-    ["越界 -1", -1],
-    ["越界 4", 4],
+    ["低于安全范围", Number.MIN_SAFE_INTEGER - 1],
+    ["高于安全范围", Number.MAX_SAFE_INTEGER + 1],
   ])("非法 priority（%s）=> 400", async (_label, priority) => {
     await expectInvalid({ message: "hi", priority });
   });

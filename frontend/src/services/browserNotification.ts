@@ -173,7 +173,7 @@ export class BrowserNotificationService {
 
   showMessageNotification(message: Message): boolean {
 
-    const priority = message.priority || 1
+    const priority = message.priority ?? 1
     if (this.settings.priority === 'high' && priority < 2) {
       return false
     }
